@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { Registry } from "../client.ts";
 import { pmap, type PmapOptions } from "./pmap.ts";
+import { sh as runSh, type ShOptions, type ShResult } from "./sh.ts";
+import type { Store } from "./store.ts";
 import { byteLength, type RunTrace } from "./trace.ts";
 
 /** A callable tool: `mcp.server.tool(args)`. */
@@ -53,6 +55,13 @@ export interface Ctx<I = any> {
   runId: string;
   /** Tool calls made so far in this run. */
   readonly calls: number;
+  /** JSON key-value store persisted at .dcompose/state/<script>.json; survives relaunches. */
+  store: Store;
+  /**
+   * Run a shell command. Requires `--allow-exec`; otherwise throws a GuardrailError.
+   * Counts toward --max-calls and appears in the run trace as `$sh`.
+   */
+  sh(command: string, opts?: ShOptions): Promise<ShResult>;
 }
 
 export class GuardrailError extends Error {
@@ -75,10 +84,32 @@ export interface ContextOptions {
   allow?: (qualified: string) => boolean;
   readOnly?: boolean;
   dryRun?: boolean;
+  store: Store;
+  allowExec?: boolean;
 }
 
 export function buildContext(opts: ContextOptions): Ctx {
   const { registry, trace } = opts;
+
+  async function shell(command: string, shOpts?: ShOptions): Promise<ShResult> {
+    if (!opts.allowExec) throw new GuardrailError("exec-denied", `sh() requires --allow-exec; refused: ${command.slice(0, 80)}`);
+    if (opts.maxCalls > 0 && trace.calls >= opts.maxCalls) throw new GuardrailError("max-calls", `call budget exhausted (${opts.maxCalls}); attempted sh()`);
+    const label = command.trim().split(/\s+/)[0] ?? "sh";
+    if (opts.dryRun) {
+      trace.record({ server: "$sh", tool: label, argsBytes: byteLength(command), ms: 0, resultBytes: 0 });
+      process.stderr.write(`[dry-run] $ ${command}\n`);
+      return { stdout: "", stderr: "", code: 0, signal: null, ms: 0 };
+    }
+    const started = Date.now();
+    try {
+      const r = await runSh(command, shOpts);
+      trace.record({ server: "$sh", tool: label, argsBytes: byteLength(command), ms: Date.now() - started, resultBytes: byteLength(r.stdout), error: r.code === 0 ? undefined : `exit ${r.code}` });
+      return r;
+    } catch (e) {
+      trace.record({ server: "$sh", tool: label, argsBytes: byteLength(command), ms: Date.now() - started, resultBytes: 0, error: (e as Error).message });
+      throw e;
+    }
+  }
 
   async function invoke(server: string, tool: string, args: Record<string, unknown> | undefined, raw: boolean): Promise<unknown> {
     const qualified = `${server}.${tool}`;
@@ -151,6 +182,8 @@ export function buildContext(opts: ContextOptions): Ctx {
     get calls() {
       return trace.calls;
     },
+    store: opts.store,
+    sh: shell,
   };
 }
 

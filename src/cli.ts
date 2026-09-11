@@ -10,6 +10,7 @@ import { initCommand } from "./commands/init.ts";
 import { runCommand } from "./commands/run.ts";
 import { typesCommand } from "./commands/types.ts";
 import { checkCommand } from "./commands/check.ts";
+import { runsListCommand, runsShowCommand } from "./commands/runs.ts";
 import type { Config } from "./config.ts";
 
 const program = new Command()
@@ -97,7 +98,23 @@ program
   .option("-c, --compact", "single-line JSON even on a TTY")
   .option("--pretty", "indented JSON even when piped")
   .option("--timeout <ms>", "per-call timeout in milliseconds", int)
+  .option("--each", "read NDJSON arg objects from stdin, one call per line, NDJSON results out (inline JSON = defaults)")
+  .option("--concurrency <n>", "parallel calls for --each (default 5)", int)
   .action((qualified, args, opts) => run((r) => callCommand(r, qualified, args, opts)));
+
+const runs = program.command("runs").description("list past runs (newest first)");
+runs
+  .option("--label <name>", "only runs with this label")
+  .option("-n, --limit <n>", "how many to show (default 20)", int)
+  .option("--json", "machine-readable output")
+  .action(async (opts) => process.exit(await runsListCommand(opts)));
+runs
+  .command("show [id-prefix]")
+  .description("per-call trace of one run (default: most recent)")
+  .option("--label <name>", "most recent run with this label")
+  .option("--json", "whole run as one JSON object")
+  .option("--jsonl", "one JSON line per call")
+  .action(async (prefix, opts) => process.exit(await runsShowCommand(prefix, opts)));
 
 program
   .command("types")
@@ -135,6 +152,8 @@ const runFlags = (c: Command) =>
     .option("--deny <globs>", "comma-separated server.tool globs to refuse")
     .option("--read-only", "refuse tools not marked readOnlyHint")
     .option("--dry-run", "log calls, execute none, return null from each")
+    .option("--allow-exec", "let the script run shell commands via ctx.sh()")
+    .option("--state <name>", "store name under .dcompose/state/ (default: script name)")
     .option("-q, --quiet", "suppress the run summary on stderr")
     .option("--jsonl", "if the result is an array, one JSON line per element")
     .option("-r, --raw-output", "print bare strings without JSON quotes")

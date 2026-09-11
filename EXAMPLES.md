@@ -174,13 +174,25 @@ updates the watched list, and relaunches. When it exits with `{"kind":"message",
 the agent summarises for the user and relaunches. `--max-calls 0` lifts the call cap because
 a monitor legitimately makes thousands of calls over a day.
 
-Alternative without relaunch: `--stream` keeps the process alive and prints each would-be
-return value as an NDJSON line on stdout instead of exiting. Pair with Claude Code's Monitor
-tool or a `tail -f`. Useful when relaunch cost (MCP cold start) is high and the daemon is
-not yet available.
+Alternative without relaunch: make the script an `async function*`. Each `yield` is printed
+as one NDJSON line on stdout immediately and the process keeps running. Pair with Claude
+Code's Monitor tool or a `tail -f`. Useful when relaunch cost (MCP cold start) is high and
+the daemon is not yet available.
+
+```ts
+export default async function* ({ mcp, store, sleep }: Ctx<{ watched: string[] }>) {
+  while (true) {
+    for (const c of await mcp.teams.list_chats({})) {
+      /* same seen/watched logic as above, but: */
+      if (worthReporting) yield { kind: "message", chatId: c.id, preview: c.lastMessagePreview };
+    }
+    await sleep(30_000);
+  }
+}
+```
 
 ```sh
-dcompose run scripts/watch-teams.ts --input-file watched.json --stream --timeout 8h
+dcompose run scripts/watch-teams.ts --input-file watched.json --timeout 8h --max-calls 0
 ```
 
 ## Safety flags in practice

@@ -1,11 +1,12 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { join, resolve, isAbsolute } from "node:path";
+import { basename, extname, join, resolve, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Registry } from "./client.ts";
 import { buildContext, GuardrailError, type Ctx } from "./runtime/context.ts";
+import { openStore } from "./runtime/store.ts";
 import { RunTrace, byteLength, fmtBytes, fmtMs, type RunSummary } from "./runtime/trace.ts";
 import { runId as makeRunId } from "./runtime/ulid.ts";
-import { EXIT } from "./output.ts";
+import { EXIT, type OutputOptions } from "./output.ts";
 
 export interface RunOptions {
   projectRoot: string;
@@ -26,17 +27,27 @@ export interface RunOptions {
   readOnly?: boolean;
   dryRun?: boolean;
   quiet?: boolean;
+  allowExec?: boolean;
+  /** Store name; defaults to the script's base name (or "_eval"). */
+  stateName?: string;
+  /** How to print streamed items (async-generator scripts). */
+  output?: OutputOptions;
 }
 
 export interface RunOutcome {
   exitCode: number;
-  /** Value to print on stdout, if any. */
+  /** Value to print on stdout, if any. Undefined for streamed runs (already printed). */
   value?: unknown;
   summary: RunSummary;
   tracePath: string;
+  streamed: number;
 }
 
-type ScriptFn = (ctx: Ctx) => Promise<unknown> | unknown;
+type ScriptFn = (ctx: Ctx) => Promise<unknown> | unknown | AsyncIterable<unknown>;
+
+function isAsyncIterable(v: unknown): v is AsyncIterable<unknown> {
+  return !!v && typeof (v as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function";
+}
 
 export async function runScript(opts: RunOptions): Promise<RunOutcome> {
   const id = makeRunId();
@@ -52,6 +63,7 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
   process.env.DCOMPOSE_RUN_ID = id;
   if (!opts.quiet) process.stderr.write(`[dcompose] run ${id}${opts.label ? ` (${opts.label})` : ""}\n`);
 
+  const stateName = opts.stateName ?? (opts.script ? basename(opts.script, extname(opts.script)) : "_eval");
   const ctx = buildContext({
     registry: opts.registry,
     trace,
@@ -62,25 +74,49 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
     allow: makeAllow(opts.allow, opts.deny),
     readOnly: opts.readOnly,
     dryRun: opts.dryRun,
+    store: openStore(join(opts.projectRoot, ".dcompose", "state"), stateName),
+    allowExec: opts.allowExec,
   });
 
   let exitCode: number = EXIT.OK;
   let value: unknown;
   let reason: string | undefined;
   let outputBytes = 0;
+  let streamed = 0;
 
   try {
     const fn = opts.code !== undefined ? compileInline(opts.code) : await loadScript(opts.script!, opts.projectRoot);
-    value = await withTimeout(Promise.resolve().then(() => fn(ctx)), opts.timeoutMs);
-    outputBytes = byteLength(value);
+    const result = await withTimeout(Promise.resolve().then(() => fn(ctx)), opts.timeoutMs);
 
-    if (opts.maxOutputBytes > 0 && outputBytes > opts.maxOutputBytes) {
-      const full = join(runsDir, `${id}.result.json`);
-      writeFileSync(full, JSON.stringify(value, null, 2));
-      const preview = JSON.stringify(value).slice(0, 512);
-      value = { $dcompose: "output-truncated", bytes: outputBytes, limit: opts.maxOutputBytes, file: full, preview };
-      exitCode = EXIT.GUARDRAIL;
-      reason = "max-output-bytes";
+    if (isAsyncIterable(result)) {
+      // Streaming script: each yielded item is one NDJSON line on stdout, flushed as it arrives.
+      // The overall --timeout covers the whole iteration.
+      await withTimeout(
+        (async () => {
+          for await (const item of result) {
+            const bytes = byteLength(item);
+            if (opts.maxOutputBytes > 0 && bytes > opts.maxOutputBytes) {
+              throw new GuardrailError("max-output-bytes", `streamed item #${streamed + 1} is ${fmtBytes(bytes)}, over --max-output-bytes (${fmtBytes(opts.maxOutputBytes)})`);
+            }
+            const raw = opts.output?.raw && typeof item === "string";
+            process.stdout.write((raw ? (item as string) : JSON.stringify(item)) + "\n");
+            streamed++;
+            outputBytes += bytes;
+          }
+        })(),
+        opts.timeoutMs,
+      );
+    } else {
+      value = result;
+      outputBytes = byteLength(value);
+      if (opts.maxOutputBytes > 0 && outputBytes > opts.maxOutputBytes) {
+        const full = join(runsDir, `${id}.result.json`);
+        writeFileSync(full, JSON.stringify(value, null, 2));
+        const preview = JSON.stringify(value).slice(0, 512);
+        value = { $dcompose: "output-truncated", bytes: outputBytes, limit: opts.maxOutputBytes, file: full, preview };
+        exitCode = EXIT.GUARDRAIL;
+        reason = "max-output-bytes";
+      }
     }
   } catch (e) {
     if (e instanceof GuardrailError || (e as Error).name === "TimeoutError") {
@@ -94,8 +130,8 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
   }
 
   const summary = trace.finish({ exitCode, outputBytes, reason });
-  if (!opts.quiet) printSummary(trace, summary);
-  return { exitCode, value, summary, tracePath: trace.path };
+  if (!opts.quiet) printSummary(trace, summary, streamed);
+  return { exitCode, value, summary, tracePath: trace.path, streamed };
 }
 
 function makeAllow(allow?: string[], deny?: string[]): ((q: string) => boolean) | undefined {
@@ -130,7 +166,7 @@ export function resolveScript(script: string, projectRoot: string): string {
 }
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...a: string[]) => (...args: unknown[]) => Promise<unknown>;
-const CTX_KEYS = ["mcp", "call", "input", "stdin", "pmap", "sleep", "emit", "log", "runId"];
+const CTX_KEYS = ["mcp", "call", "input", "stdin", "pmap", "sleep", "emit", "log", "runId", "store", "sh"];
 
 /** `dcompose eval`: try as a single expression first, then as a function body. */
 function compileInline(code: string): ScriptFn {
@@ -172,9 +208,10 @@ function formatError(e: unknown): string {
   return [`${e.name}: ${e.message}`, ...frames].join("\n");
 }
 
-function printSummary(trace: RunTrace, s: RunSummary): void {
+function printSummary(trace: RunTrace, s: RunSummary, streamed: number): void {
   const lines = trace.aggregateLines();
   for (const l of lines) process.stderr.write(`[dcompose] ${l}\n`);
   const status = s.exitCode === 0 ? "done" : `exit ${s.exitCode}${s.reason ? ` (${s.reason})` : ""}`;
-  process.stderr.write(`[dcompose] ${status} in ${fmtMs(s.ms)} · ${s.calls} call${s.calls === 1 ? "" : "s"} · output ${fmtBytes(s.outputBytes)} · trace ${trace.path}\n`);
+  const out = streamed ? `streamed ${streamed} item${streamed === 1 ? "" : "s"} (${fmtBytes(s.outputBytes)})` : `output ${fmtBytes(s.outputBytes)}`;
+  process.stderr.write(`[dcompose] ${status} in ${fmtMs(s.ms)} · ${s.calls} call${s.calls === 1 ? "" : "s"} · ${out} · trace ${trace.path}\n`);
 }

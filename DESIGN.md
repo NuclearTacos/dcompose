@@ -202,9 +202,13 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    unknown options, and open output types (`additionalProperties` on output schemas) after it
    found the server's declared schema omitted `id` fields that exist in real payloads. Its
    script is kept as `.dcompose/scripts/oncall-report.ts`.
-4. **Long-running.** `sleep`, `emit`, `store`, `--timeout 0`, `--max-calls`, `--read-only`,
-   `--dry-run`. Scenario 2 works against a Teams MCP server dcompose owns. Document the
-   pattern: run with `run_in_background`, script returns → process exits → agent wakes.
+4. **Long-running.** ✅ Done 2026-09-11. `ctx.store` (per-script JSON at `.dcompose/state/`,
+   atomic tmp+rename, `--state <name>` to share), streaming via async-generator scripts (each
+   `yield` → one NDJSON stdout line; replaces the planned `--stream` flag, no mode to forget),
+   `ctx.sh()` gated by `--allow-exec` and traced as `$sh`, `call --each` (the xargs of MCP),
+   `runs` / `runs show`. Scenario 2 mechanics verified with a PagerDuty incident watcher:
+   baseline run records 29 open incidents and returns; second run polls and exits 2 on
+   `--timeout`. The real Teams version still needs a Graph-capable MCP server dcompose can reach.
 5. **Daemon.** `dcompose daemon` keeps MCP connections warm over a local socket; `run`
    uses it when present. Fixes per-run cold start and OAuth re-prompts.
 6. **MCP mode.** `dcompose mcp` exposes `search_tools` and `run_script` for non-shell hosts.

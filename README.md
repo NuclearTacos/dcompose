@@ -4,10 +4,11 @@ Compose MCP tool calls in code instead of one tool call per model round-trip. A 
 coding agent drives through its shell. See [DESIGN.md](DESIGN.md) for the why and
 [EXAMPLES.md](EXAMPLES.md) for the target usage.
 
-**Status: phase 3.** `init`, `servers`, `tools`, `call`, `run`, `eval`, `types`, and `check`
-work against stdio and HTTP servers, with run traces, guardrails, generated TypeScript
-signatures for every tool, and a SKILL.md that teaches Claude Code the workflow.
-The persisted `store`, `--stream`, the daemon, and OAuth are not built yet.
+**Status: phase 4.** `init`, `servers`, `tools`, `call` (with `--each`), `run`, `eval`, `types`,
+`check`, and `runs` work against stdio and HTTP servers, with run traces, guardrails, generated
+TypeScript signatures, a persisted per-script `store`, streaming via async generators, opt-in
+`sh()`, and a SKILL.md that teaches Claude Code the workflow. The warm-connection daemon and
+OAuth for remote servers are not built yet.
 
 ## Quickstart
 
@@ -59,6 +60,22 @@ JSON stub pointing at it, so stdout is always valid JSON.
 
 Every run writes `.dcompose/runs/<UTC time>-<ULID>.jsonl`: a header line, one line per tool
 call (server, tool, arg/result sizes, duration, error), and a summary line.
+
+## Monitors, streaming, state
+
+- **Return shape.** Poll, remember state in `ctx.store` (a JSON file at `.dcompose/state/<script>.json`,
+  atomic writes), and `return` when something needs the agent. Process exit is the wake-up.
+  Run with `--timeout 0 --max-calls 0` in the background and relaunch after handling the result.
+- **Yield shape.** Export an `async function*`. Each `yield` is one NDJSON line on stdout, flushed
+  immediately; the process keeps running. No mode flag: the runner detects the async iterator.
+- **`sh(cmd)`** runs a shell command from inside a script. Requires `--allow-exec`, counts toward
+  `--max-calls`, appears in the trace as `$sh`, and is skipped under `--dry-run`.
+- **`call --each`** reads NDJSON arg objects from stdin and makes one call per line with bounded
+  concurrency, output order preserved. Inline JSON acts as defaults merged under each line.
+- **`runs` / `runs show [prefix]`** list past runs and print a per-call trace table.
+
+Example scripts under `.dcompose/scripts/`: `oncall-report.ts` (cross-entity join),
+`watch-incidents.ts` (return-shape monitor with baseline), `stream-oncalls.ts` (yield shape).
 
 ## Types and checking
 

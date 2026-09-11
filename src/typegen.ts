@@ -105,7 +105,9 @@ async function compileSchema(schema: unknown, name: string, kind: "input" | "out
     if (decls.length === 0) return `export type ${name} = Record<string, unknown>; // generator produced no declaration\n`;
     // Hoisted helpers (from $defs) get a per-tool prefix so `ServiceReference` from one tool cannot
     // merge with a differently-shaped `ServiceReference` from another.
-    let fixed = out;
+    // Output objects are open (see additionalProperties above); make the extras `any` rather than
+    // `unknown` so `seen[i.id]` and similar just work on fields the server forgot to declare.
+    let fixed = kind === "output" ? out.replace(/\[k: string\]: unknown/g, "[k: string]: any") : out;
     for (const d of decls.slice(1)) fixed = fixed.replace(new RegExp(`\\b${d}\\b`, "g"), `${name}_${d}`);
     if (decls[0] !== name) fixed = fixed.replace(new RegExp(`\\b${decls[0]}\\b`, "g"), name);
     return fixed;

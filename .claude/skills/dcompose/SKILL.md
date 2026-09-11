@@ -83,11 +83,61 @@ dcompose call pagerduty.get_incident '{"incident_id":"Q123"}' | jq .response.tit
 
 ## Long-running monitors
 
-Poll in a loop and `return` only when something needs attention; process exit is the
-notification. Run it in the background with no limits and relaunch after handling the result:
+Two shapes. Pick **return** when you want to be woken once; pick **yield** when you want a feed.
+
+**Return shape.** Poll in a loop, remember what you have seen in `store`, and `return` only
+when something needs attention. Process exit is the notification: run it with the Bash tool in
+the background (`run_in_background`), handle the result when it exits, then relaunch.
+
+```ts
+export default async function ({ mcp, store, sleep, emit }: Ctx) {
+  const seen: Record<string, string> = (await store.get("seen")) ?? {};
+  while (true) {
+    const { response } = await mcp.pagerduty.list_incidents({ statuses: ["triggered"], limit: 100 });
+    const fresh = response.filter((i) => seen[i.id] !== i.status);
+    for (const i of response) seen[i.id] = i.status;
+    await store.set("seen", seen);                      // persisted at .dcompose/state/<script>.json
+    if (fresh.length) return fresh.map((i) => ({ id: i.id, title: i.title, status: i.status }));
+    emit({ kind: "poll", open: response.length });      // stderr, not the result
+    await sleep(30_000);
+  }
+}
+```
 
 ```sh
-dcompose run watch-thing -i '{"ids":[...]}' --timeout 0 --max-calls 0 --read-only
+dcompose run watch-incidents --timeout 0 --max-calls 0 --read-only -q
+```
+
+The first run should baseline (record everything, return a summary) so existing items do not
+all count as new. `--state <name>` shares one store between scripts; delete the file to reset.
+
+**Yield shape.** Make the script an `async function*`. Every `yield` is written to stdout as
+one NDJSON line immediately, and the process keeps running. Pair with Claude Code's Monitor tool
+or `tail -f`. Same guardrails apply; `--max-output-bytes` is checked per item.
+
+```ts
+export default async function* ({ mcp, sleep }: Ctx) {
+  while (true) { yield await mcp.pagerduty.list_oncalls({ limit: 5 }); await sleep(60_000); }
+}
+```
+
+## Shelling out
+
+`sh(cmd)` returns `{ stdout, stderr, code }` and only works with `--allow-exec`. It counts
+toward `--max-calls`, appears in the trace as `$sh`, and is skipped under `--dry-run`.
+Use it to mix MCP data with local CLIs (git, gh, jq) inside one script.
+
+## Batch one tool over many inputs from the shell
+
+```sh
+jq -c '.response[] | {incident_id: .id}' incidents.json | dcompose call pagerduty.list_incident_notes --each --concurrency 5
+```
+
+## Inspecting runs
+
+```sh
+dcompose runs                # newest first: id, label, script, calls, time, exit, reason
+dcompose runs show           # per-call trace of the most recent run (or give an id prefix / --label)
 ```
 
 ## Do not

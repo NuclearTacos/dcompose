@@ -19,6 +19,8 @@ export interface RunCliOptions extends OutputOptions {
   dryRun?: boolean;
   quiet?: boolean;
   rawOutput?: boolean;
+  allowExec?: boolean;
+  state?: string;
 }
 
 export async function runCommand(
@@ -47,9 +49,12 @@ export async function runCommand(
     readOnly: opts.readOnly,
     dryRun: opts.dryRun,
     quiet: opts.quiet,
+    allowExec: opts.allowExec,
+    stateName: opts.state,
+    output: { raw: opts.rawOutput },
   });
 
-  if (outcome.value !== undefined) {
+  if (outcome.streamed === 0 && outcome.value !== undefined) {
     emitResult(outcome.value, { pretty: opts.pretty, compact: opts.compact, jsonl: opts.jsonl, raw: opts.rawOutput });
   }
   return outcome.exitCode;
