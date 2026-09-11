@@ -8,6 +8,8 @@ import { toolsCommand } from "./commands/tools.ts";
 import { callCommand } from "./commands/call.ts";
 import { initCommand } from "./commands/init.ts";
 import { runCommand } from "./commands/run.ts";
+import { typesCommand } from "./commands/types.ts";
+import { checkCommand } from "./commands/check.ts";
 import type { Config } from "./config.ts";
 
 const program = new Command()
@@ -16,6 +18,8 @@ const program = new Command()
   .version("0.1.0")
   .option("--config <path>", "config file (replaces the default lookup chain)")
   .option("-v, --verbose", "forward MCP server stderr")
+  .showHelpAfterError("(run the subcommand with --help to see its options)")
+  .showSuggestionAfterError()
   .configureOutput({ writeOut: (s) => process.stderr.write(s) });
 
 interface GlobalOpts {
@@ -64,7 +68,8 @@ program
   .command("init")
   .description("create dcompose.json and .dcompose/ in the current directory")
   .option("--import-claude", "copy stdio/http servers from ~/.claude.json and ./.mcp.json into dcompose.local.json")
-  .option("--force", "overwrite existing imported entries")
+  .option("--force", "overwrite existing imported entries and SKILL.md")
+  .option("--no-skill", "do not write .claude/skills/dcompose/SKILL.md")
   .action(async (opts) => process.exit(await initCommand(process.cwd(), opts)));
 
 program
@@ -86,12 +91,35 @@ program
   .description("call one tool. Args as JSON object, or '-' to read from stdin")
   .option("--args-file <path>", "read JSON args from a file ('-' for stdin)")
   .option("--raw", "print the unparsed MCP result envelope")
+  .option("--read-only", "refuse the call unless the tool is annotated readOnlyHint (exit 2)")
   .option("--jsonl", "if the result is an array, one JSON line per element")
   .option("-r, --raw-output", "print bare strings without JSON quotes")
   .option("-c, --compact", "single-line JSON even on a TTY")
   .option("--pretty", "indented JSON even when piped")
   .option("--timeout <ms>", "per-call timeout in milliseconds", int)
   .action((qualified, args, opts) => run((r) => callCommand(r, qualified, args, opts)));
+
+program
+  .command("types")
+  .description("generate .dcompose/types/mcp.d.ts so ctx.mcp is strictly typed")
+  .option("-s, --server <names...>", "only these servers")
+  .option("--force", "regenerate even if tool schemas are unchanged")
+  .option("--out <path>", "write somewhere else")
+  .option("--print", "print to stdout instead of writing")
+  .action((opts) => run((r) => typesCommand(r, opts)));
+
+program
+  .command("check [scripts...]")
+  .description("type-check scripts in .dcompose/scripts against the generated types")
+  .option("--json", "diagnostics as JSON on stdout")
+  .action(async (scripts, opts) => {
+    try {
+      process.exit(await checkCommand(scripts, opts));
+    } catch (e) {
+      process.stderr.write(`dcompose: ${(e as Error).message}\n`);
+      process.exit(EXIT.CONFIG);
+    }
+  });
 
 const runFlags = (c: Command) =>
   c

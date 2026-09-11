@@ -4,3 +4,4 @@ dist/
 .dcompose/state/
 dcompose.local.json
 *.log
+.dcompose/tsconfig.json

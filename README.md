@@ -4,9 +4,10 @@ Compose MCP tool calls in code instead of one tool call per model round-trip. A 
 coding agent drives through its shell. See [DESIGN.md](DESIGN.md) for the why and
 [EXAMPLES.md](EXAMPLES.md) for the target usage.
 
-**Status: phase 2.** `init`, `servers`, `tools`, `call`, `run`, and `eval` work against stdio
-and HTTP servers, with run traces and call/timeout/allow/read-only/dry-run guardrails.
-Type generation, the persisted `store`, `--stream`, the daemon, and OAuth are not built yet.
+**Status: phase 3.** `init`, `servers`, `tools`, `call`, `run`, `eval`, `types`, and `check`
+work against stdio and HTTP servers, with run traces, guardrails, generated TypeScript
+signatures for every tool, and a SKILL.md that teaches Claude Code the workflow.
+The persisted `store`, `--stream`, the daemon, and OAuth are not built yet.
 
 ## Quickstart
 
@@ -58,6 +59,29 @@ JSON stub pointing at it, so stdout is always valid JSON.
 
 Every run writes `.dcompose/runs/<UTC time>-<ULID>.jsonl`: a header line, one line per tool
 call (server, tool, arg/result sizes, duration, error), and a summary line.
+
+## Types and checking
+
+```sh
+dcompose types            # writes .dcompose/types/mcp.d.ts from every tool's input/output schema
+dcompose check [script]   # tsc over .dcompose/scripts against those types
+```
+
+The generated file augments `McpServers` in the `dcompose` module, so `ctx.mcp.pagerduty.list_incidents`
+is strictly typed in any script that imports `Ctx`. Tools whose server publishes an
+`outputSchema` get a real return type; the rest return `any` and say so in their JSDoc.
+Hoisted helper types are prefixed per tool so same-named `$defs` from different tools never merge.
+
+`import type { Ctx } from "dcompose"` resolves through `.dcompose/tsconfig.json`, which `types`
+regenerates with an absolute path to this install. It is type-only, so Node never needs to
+resolve it at runtime. The tsconfig is gitignored because it is machine-specific; the `.d.ts`
+is not, and is skipped when the tool-list hash is unchanged.
+
+## Agent onboarding
+
+`dcompose init` writes `.claude/skills/dcompose/SKILL.md`. Claude Code picks it up automatically
+and learns the servers → tools → types → script → check → run loop, the guardrail flags, and the
+monitor pattern. Pass `--no-skill` to skip it.
 
 ## Config
 

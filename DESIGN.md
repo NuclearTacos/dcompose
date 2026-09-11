@@ -189,9 +189,19 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    needed the seams anyway: `--timeout`, `--max-calls`, `--allow`/`--deny`, `--read-only`,
    `--dry-run`, `sleep`, `emit`. Scenario 1 verified against PagerDuty (list → fan-out → compact).
    Phase 4 now reduces to `store`, `--stream`, `--allow-exec` / `sh()`, and the monitor pattern docs.
-3. **Types + agent onboarding.** `types` command, `init` writes `SKILL.md` teaching the
-   workflow: `tools` → read `.d.ts` → write script → `run`. Test it by letting Claude Code
-   solve scenario 1 cold.
+3. **Types + agent onboarding.** ✅ Done 2026-09-11. `types` generates `.dcompose/types/mcp.d.ts`
+   (130 tools across 3 servers, 92 with output schemas, zero conversion failures) as a module
+   augmentation of `McpServers`, so `ctx.mcp` is strictly typed when the file exists and falls
+   back to `any` when it does not. Hoisted `$defs` are prefixed per tool after finding 39
+   cross-tool name collisions. `check` runs the TypeScript 5 compiler API over
+   `.dcompose/scripts` via a generated `.dcompose/tsconfig.json` whose `paths` map `dcompose`
+   to this install. `init` writes `.claude/skills/dcompose/SKILL.md`.
+   **Cold test passed:** a fresh agent given only SKILL.md and a task (on-call users joined to
+   open incidents via escalation policy and service) produced a correct report in 12 commands,
+   exit 0, 4 tool calls. Its feedback drove three fixes: `call --read-only`, help hints on
+   unknown options, and open output types (`additionalProperties` on output schemas) after it
+   found the server's declared schema omitted `id` fields that exist in real payloads. Its
+   script is kept as `.dcompose/scripts/oncall-report.ts`.
 4. **Long-running.** `sleep`, `emit`, `store`, `--timeout 0`, `--max-calls`, `--read-only`,
    `--dry-run`. Scenario 2 works against a Teams MCP server dcompose owns. Document the
    pattern: run with `run_in_background`, script returns → process exits → agent wakes.

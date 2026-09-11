@@ -13,6 +13,18 @@ export interface McpProxy {
   [server: string]: ServerProxy;
 }
 
+/**
+ * Augmented by the generated `.dcompose/types/mcp.d.ts`:
+ *
+ *   declare module "dcompose" { interface McpServers { pagerduty: Pagerduty } }
+ *
+ * When augmented, `ctx.mcp` is strictly typed; otherwise it falls back to the `any` proxy.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface McpServers {}
+
+export type Mcp = keyof McpServers extends never ? McpProxy : McpServers;
+
 export interface StdinHelper {
   /** True when stdin is a pipe or file rather than a terminal. */
   readonly piped: boolean;
@@ -26,7 +38,7 @@ export interface StdinHelper {
 
 export interface Ctx<I = any> {
   /** Typed once `dcompose types` has run; `any` otherwise. */
-  mcp: McpProxy;
+  mcp: Mcp;
   /** Call by qualified name when the tool name is not a valid identifier. */
   call(qualified: `${string}.${string}`, args?: Record<string, unknown>): Promise<any>;
   /** From --input / --input-file / --input -. `{}` when absent. */

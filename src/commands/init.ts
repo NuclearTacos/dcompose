@@ -1,11 +1,14 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { CONFIG_FILE, LOCAL_CONFIG_FILE, importFromClaude, isStdio, writeConfigFile, type ServerConfig } from "../config.ts";
 import { EXIT } from "../output.ts";
+import { skillMarkdown } from "../skill.ts";
 
 export interface InitOptions {
   importClaude?: boolean;
   force?: boolean;
+  /** Commander sets this to false for --no-skill. */
+  skill?: boolean;
 }
 
 export async function initCommand(cwd: string, opts: InitOptions): Promise<number> {
@@ -21,6 +24,17 @@ export async function initCommand(cwd: string, opts: InitOptions): Promise<numbe
 
   for (const dir of ["scripts", "types", "runs", "state"]) mkdirSync(join(cwd, ".dcompose", dir), { recursive: true });
   err("created .dcompose/{scripts,types,runs,state}");
+
+  if (opts.skill !== false) {
+    const skillPath = join(cwd, ".claude", "skills", "dcompose", "SKILL.md");
+    if (!existsSync(skillPath) || opts.force) {
+      mkdirSync(dirname(skillPath), { recursive: true });
+      writeFileSync(skillPath, skillMarkdown(), "utf8");
+      err(`wrote ${relative(cwd, skillPath)} (teaches Claude Code the dcompose workflow)`);
+    } else {
+      err(`${relative(cwd, skillPath)} already exists, left alone (--force to overwrite)`);
+    }
+  }
 
   if (opts.importClaude) {
     const { imported, skipped } = importFromClaude(cwd);

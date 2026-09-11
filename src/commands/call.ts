@@ -6,12 +6,22 @@ import { emitResult, EXIT, type OutputOptions } from "../output.ts";
 export interface CallOptions extends OutputOptions {
   rawOutput?: boolean;
   argsFile?: string;
+  readOnly?: boolean;
   timeout?: number;
 }
 
 export async function callCommand(registry: Registry, qualified: string, argsJson: string | undefined, opts: CallOptions): Promise<number> {
   const { server, tool } = registry.resolve(qualified);
   const args = readArgs(argsJson, opts.argsFile);
+
+  if (opts.readOnly) {
+    const info = (await server.listTools()).find((t) => t.name === tool);
+    if (!info) throw new Error(`${qualified}: unknown tool`);
+    if (!info.readOnly) {
+      process.stderr.write(`dcompose: ${qualified} is not marked readOnlyHint and --read-only is set\n`);
+      return EXIT.GUARDRAIL;
+    }
+  }
 
   try {
     const value = await server.callTool(tool, args, { raw: opts.raw, timeoutMs: opts.timeout });

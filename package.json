@@ -21,11 +21,20 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/node": "^22.20.2",
     "commander": "^15.0.0",
+    "json-schema-to-typescript": "^16.0.0",
     "zod": "^4.6.2"
   },
   "devDependencies": {
-    "@types/node": "^22.20.2",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   }
 }
