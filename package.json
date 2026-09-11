@@ -1,0 +1,31 @@
+{
+  "name": "@chrisrea/dcompose",
+  "version": "0.1.0",
+  "description": "Compose MCP tool calls in code. Code Mode for shell-driven agents.",
+  "type": "module",
+  "bin": {
+    "dcompose": "./bin/dcompose.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "commander": "^15.0.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.dcompose/runs/
+.dcompose/state/
+dcompose.local.json
+*.log

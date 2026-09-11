@@ -1,0 +1,201 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { isStdio, type Config, type ServerConfig } from "./config.ts";
+import { parseResult, ToolError } from "./result.ts";
+
+export class ConnectionError extends Error {
+  readonly server: string;
+  constructor(server: string, message: string, options?: ErrorOptions) {
+    super(`${server}: ${message}`, options);
+    this.name = "ConnectionError";
+    this.server = server;
+  }
+}
+
+export interface ToolInfo extends Tool {
+  server: string;
+  readOnly: boolean;
+}
+
+export interface CallOptions {
+  /** Return the raw MCP result instead of the parsed value. */
+  raw?: boolean;
+  timeoutMs?: number;
+}
+
+const CLIENT_INFO = { name: "dcompose", version: "0.1.0" };
+
+export class Server {
+  readonly name: string;
+  readonly config: ServerConfig;
+  private client: Client | null = null;
+  private transport: Transport | null = null;
+  private connecting: Promise<void> | null = null;
+  private toolCache: ToolInfo[] | null = null;
+  private stderrTail: string[] = [];
+  private readonly connectTimeoutMs: number;
+  private readonly verbose: boolean;
+
+  constructor(name: string, config: ServerConfig, opts: { connectTimeoutMs: number; verbose: boolean }) {
+    this.name = name;
+    this.config = config;
+    this.connectTimeoutMs = opts.connectTimeoutMs;
+    this.verbose = opts.verbose;
+  }
+
+  get transportKind(): "stdio" | "http" | "sse" {
+    return isStdio(this.config) ? "stdio" : this.config.type;
+  }
+
+  get connected(): boolean {
+    return this.client !== null;
+  }
+
+  /** Idempotent; concurrent callers share one connection attempt. */
+  connect(): Promise<void> {
+    if (this.client) return Promise.resolve();
+    if (!this.connecting) this.connecting = this.doConnect().finally(() => (this.connecting = null));
+    return this.connecting;
+  }
+
+  private async doConnect(): Promise<void> {
+    const transport = this.makeTransport();
+    const client = new Client(CLIENT_INFO, { capabilities: {} });
+
+    const timer = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`connect timed out after ${this.connectTimeoutMs}ms`)), this.connectTimeoutMs).unref(),
+    );
+
+    try {
+      await Promise.race([client.connect(transport), timer]);
+    } catch (e) {
+      await transport.close().catch(() => {});
+      const detail = this.describeFailure(e as Error);
+      throw new ConnectionError(this.name, detail, { cause: e });
+    }
+    this.client = client;
+    this.transport = transport;
+  }
+
+  private makeTransport(): Transport {
+    const c = this.config;
+    if (isStdio(c)) {
+      // Match Claude Code: child inherits the full environment, config env overrides.
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+      Object.assign(env, c.env);
+
+      const t = new StdioClientTransport({ command: c.command, args: c.args, env, cwd: c.cwd, stderr: "pipe" });
+      t.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString("utf8");
+        if (this.verbose) process.stderr.write(`[${this.name}] ${text}`);
+        for (const line of text.split(/\r?\n/)) {
+          if (!line) continue;
+          this.stderrTail.push(line);
+          if (this.stderrTail.length > 20) this.stderrTail.shift();
+        }
+      });
+      return t;
+    }
+
+    const url = new URL(c.url);
+    const requestInit: RequestInit = { headers: c.headers };
+    if (c.type === "sse") return new SSEClientTransport(url, { requestInit });
+    return new StreamableHTTPClientTransport(url, { requestInit });
+  }
+
+  private describeFailure(e: Error): string {
+    const cause = (e as { cause?: { message?: string } }).cause?.message;
+    const msg = cause ? `${e.message} (${cause})` : (e.message ?? String(e));
+    const parts = [msg];
+    if (/401|unauthorized/i.test(msg)) {
+      parts.push("Server requires authentication. OAuth support (`dcompose auth`) lands in a later phase; for now supply a token via `headers`.");
+    }
+    if (isStdio(this.config)) {
+      if (/ENOENT/.test(msg)) parts.push(`Command not found: ${this.config.command}`);
+      if (this.stderrTail.length) parts.push("server stderr:\n  " + this.stderrTail.join("\n  "));
+    }
+    return parts.join("\n");
+  }
+
+  async listTools(): Promise<ToolInfo[]> {
+    if (this.toolCache) return this.toolCache;
+    await this.connect();
+    const tools: Tool[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.client!.listTools(cursor ? { cursor } : undefined);
+      tools.push(...page.tools);
+      cursor = page.nextCursor;
+    } while (cursor);
+    this.toolCache = tools.map((t) => ({ ...t, server: this.name, readOnly: t.annotations?.readOnlyHint === true }));
+    return this.toolCache;
+  }
+
+  async callTool(tool: string, args: Record<string, unknown> = {}, opts: CallOptions = {}): Promise<unknown> {
+    await this.connect();
+    const result = (await this.client!.callTool(
+      { name: tool, arguments: args },
+      undefined,
+      opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined,
+    )) as CallToolResult;
+    if (result.isError) throw new ToolError(this.name, tool, result);
+    return opts.raw ? result : parseResult(result);
+  }
+
+  serverInfo(): { name?: string; version?: string } | undefined {
+    return this.client?.getServerVersion();
+  }
+
+  async close(): Promise<void> {
+    const t = this.transport;
+    this.client = null;
+    this.transport = null;
+    this.toolCache = null;
+    if (t) await t.close().catch(() => {});
+  }
+}
+
+export class Registry {
+  private readonly servers = new Map<string, Server>();
+
+  constructor(config: Config, opts: { verbose?: boolean } = {}) {
+    for (const [name, sc] of Object.entries(config.mcpServers)) {
+      this.servers.set(name, new Server(name, sc, { connectTimeoutMs: config.defaults.connectTimeoutMs, verbose: opts.verbose ?? false }));
+    }
+  }
+
+  names(): string[] {
+    return [...this.servers.keys()];
+  }
+
+  get(name: string): Server {
+    const s = this.servers.get(name);
+    if (!s) {
+      const known = this.names();
+      throw new ConnectionError(name, known.length ? `unknown server. Known: ${known.join(", ")}` : "unknown server. No servers configured; run `dcompose init`.");
+    }
+    return s;
+  }
+
+  all(): Server[] {
+    return [...this.servers.values()];
+  }
+
+  /** Resolve `server.tool` (split on the first dot). */
+  resolve(qualified: string): { server: Server; tool: string } {
+    const i = qualified.indexOf(".");
+    if (i <= 0 || i === qualified.length - 1) {
+      throw new ConnectionError(qualified, "expected <server>.<tool>");
+    }
+    return { server: this.get(qualified.slice(0, i)), tool: qualified.slice(i + 1) };
+  }
+
+  async closeAll(): Promise<void> {
+    await Promise.all(this.all().map((s) => s.close()));
+  }
+}

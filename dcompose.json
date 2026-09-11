@@ -1,0 +1,8 @@
+{
+  "mcpServers": {},
+  "defaults": {
+    "maxCalls": 200,
+    "timeout": "5m",
+    "concurrency": 5
+  }
+}
