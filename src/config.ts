@@ -2,6 +2,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { z } from "zod";
+import { createHash } from "node:crypto";
 
 // Same shape as Claude Code's `mcpServers` entries so users can copy them verbatim.
 const StdioServer = z.object({
@@ -26,6 +27,14 @@ export type HttpServerConfig = z.infer<typeof HttpServer>;
 
 export const Config = z.object({
   mcpServers: z.record(z.string(), ServerConfig).default({}),
+  daemon: z
+    .object({
+      /* Start a daemon automatically the first time a command needs a server. */
+      autoStart: z.boolean().default(false),
+      /* Exit after this long with no requests. 0 = never. */
+      idle: z.string().default("1h"),
+    })
+    .prefault({}),
   defaults: z
     .object({
       maxCalls: z.number().int().nonnegative().default(200),
@@ -204,4 +213,9 @@ export function parseDuration(s: string | number): number {
     case "h": return n * 3_600_000;
     default: return n;
   }
+}
+
+/** Stable hash of the effective config, so a daemon can tell when its config is stale. */
+export function configHash(loaded: LoadedConfig): string {
+  return createHash("sha1").update(JSON.stringify(loaded.config)).digest("hex").slice(0, 12);
 }

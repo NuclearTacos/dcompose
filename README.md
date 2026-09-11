@@ -4,11 +4,11 @@ Compose MCP tool calls in code instead of one tool call per model round-trip. A 
 coding agent drives through its shell. See [DESIGN.md](DESIGN.md) for the why and
 [EXAMPLES.md](EXAMPLES.md) for the target usage.
 
-**Status: phase 4.** `init`, `servers`, `tools`, `call` (with `--each`), `run`, `eval`, `types`,
-`check`, and `runs` work against stdio and HTTP servers, with run traces, guardrails, generated
-TypeScript signatures, a persisted per-script `store`, streaming via async generators, opt-in
-`sh()`, and a SKILL.md that teaches Claude Code the workflow. The warm-connection daemon and
-OAuth for remote servers are not built yet.
+**Status: phase 5.** `init`, `servers`, `tools`, `call` (with `--each`), `run`, `eval`, `types`,
+`check`, `runs`, and `daemon` work against stdio and HTTP servers, with run traces, guardrails,
+generated TypeScript signatures, a persisted per-script `store`, streaming via async generators,
+opt-in `sh()`, a warm-connection daemon, and a SKILL.md that teaches Claude Code the workflow.
+OAuth for remote servers and the MCP-server mode are not built yet.
 
 ## Quickstart
 
@@ -76,6 +76,26 @@ call (server, tool, arg/result sizes, duration, error), and a summary line.
 
 Example scripts under `.dcompose/scripts/`: `oncall-report.ts` (cross-entity join),
 `watch-incidents.ts` (return-shape monitor with baseline), `stream-oncalls.ts` (yield shape).
+
+## Daemon
+
+Every command spawns the configured MCP servers fresh, which costs several seconds for `uvx` or
+`npx` servers. `dcompose daemon start` launches a detached per-project process that holds the
+connections open. Commands find it through `.dcompose/daemon.json`, delegate all tool calls to
+it over a named pipe (Windows) or Unix socket, and fall back to direct connections when it is
+not running. It exits on its own after an idle period (`daemon.idle`, default 1h).
+
+```sh
+dcompose daemon start [--idle 2h] [--foreground]
+dcompose daemon status        # pid, uptime, warm/cold per server
+dcompose daemon log           # tail .dcompose/daemon.log
+dcompose daemon stop
+dcompose --no-daemon tools    # bypass for one command; DCOMPOSE_NO_DAEMON=1 does the same
+```
+
+If a config file changes while the daemon is up, the next command notices the hash mismatch and
+asks the daemon to reload. Set `"daemon": { "autoStart": true }` in `dcompose.json` to have the
+first command start it automatically.
 
 ## Types and checking
 

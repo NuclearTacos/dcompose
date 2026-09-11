@@ -5,3 +5,5 @@ dist/
 dcompose.local.json
 *.log
 .dcompose/tsconfig.json
+.dcompose/daemon.json
+.dcompose/daemon.log

@@ -11,7 +11,9 @@ import { runCommand } from "./commands/run.ts";
 import { typesCommand } from "./commands/types.ts";
 import { checkCommand } from "./commands/check.ts";
 import { runsListCommand, runsShowCommand } from "./commands/runs.ts";
-import type { Config } from "./config.ts";
+import { daemonLog, daemonRun, daemonStart, daemonStatus, daemonStop, ensureDaemon } from "./commands/daemon.ts";
+import { DaemonClient } from "./daemon/client.ts";
+import { configHash, findProjectRoot, type Config } from "./config.ts";
 
 const program = new Command()
   .name("dcompose")
@@ -19,6 +21,7 @@ const program = new Command()
   .version("0.1.0")
   .option("--config <path>", "config file (replaces the default lookup chain)")
   .option("-v, --verbose", "forward MCP server stderr")
+  .option("--no-daemon", "connect to MCP servers directly even if a daemon is running")
   .showHelpAfterError("(run the subcommand with --help to see its options)")
   .showSuggestionAfterError()
   .configureOutput({ writeOut: (s) => process.stderr.write(s) });
@@ -26,21 +29,47 @@ const program = new Command()
 interface GlobalOpts {
   config?: string;
   verbose?: boolean;
+  /** Commander: --no-daemon sets this to false; default true. */
+  daemon?: boolean;
 }
 
 let loaded: Config | null = null;
-function registry(): Registry {
+let daemonClient: DaemonClient | null = null;
+
+/**
+ * Build the registry. If a daemon is running for this project (or config says autoStart),
+ * every server is delegated to it; otherwise servers connect directly as before.
+ * `--no-daemon`, `DCOMPOSE_NO_DAEMON=1`, or an explicit `--config` path force direct mode.
+ */
+async function registry(): Promise<Registry> {
   const g = program.opts<GlobalOpts>();
   const { config } = loadConfig({ explicitPath: g.config });
   loaded = config;
-  return new Registry(config, { verbose: g.verbose });
+
+  const useDaemon = g.daemon !== false && !process.env.DCOMPOSE_NO_DAEMON && !g.config;
+  if (useDaemon) {
+    const root = findProjectRoot();
+    daemonClient = await DaemonClient.forProject(root);
+    if (!daemonClient && config.daemon.autoStart) daemonClient = await ensureDaemon(root, (s) => process.stderr.write(s + "\n"));
+    if (daemonClient) {
+      // Config edited since the daemon started? Ask it to reload so we never run against stale servers.
+      const want = configHash({ config, sources: [] });
+      const have = (await daemonClient.status().catch(() => null))?.configHash;
+      if (have && have !== want) {
+        await daemonClient.request("reload").catch(() => {});
+        if (g.verbose) process.stderr.write("[dcompose] daemon reloaded config\n");
+      }
+      if (g.verbose) process.stderr.write("[dcompose] using daemon\n");
+    }
+  }
+  return new Registry(config, { verbose: g.verbose, remote: daemonClient });
 }
 
 async function run(fn: (r: Registry) => Promise<number>): Promise<void> {
   let r: Registry | null = null;
   let code: number;
   try {
-    r = registry();
+    r = await registry();
     code = await fn(r);
   } catch (e) {
     code = classify(e);
@@ -49,6 +78,7 @@ async function run(fn: (r: Registry) => Promise<number>): Promise<void> {
   } finally {
     // Stdio children keep the event loop alive; close them and exit explicitly.
     await r?.closeAll();
+    daemonClient?.close();
   }
   process.exit(code);
 }
@@ -115,6 +145,35 @@ runs
   .option("--json", "whole run as one JSON object")
   .option("--jsonl", "one JSON line per call")
   .action(async (prefix, opts) => process.exit(await runsShowCommand(prefix, opts)));
+
+const daemon = program.command("daemon").description("keep MCP connections warm across runs (one daemon per project)");
+daemon
+  .command("start")
+  .description("start a detached daemon for this project (no-op if running)")
+  .option("--idle <dur>", "exit after this long without requests (default from config, 1h; 0 = never)")
+  .option("--foreground", "run in this terminal instead of detaching")
+  .option("-v, --verbose", "forward MCP server stderr into the daemon log")
+  .action(async (opts) => process.exit(await daemonStart(opts)));
+daemon
+  .command("stop")
+  .description("ask the daemon to shut down")
+  .action(async () => process.exit(await daemonStop()));
+daemon
+  .command("status")
+  .description("pid, uptime, and which servers are warm")
+  .option("--json", "machine-readable output")
+  .action(async (opts) => process.exit(await daemonStatus(opts)));
+daemon
+  .command("log")
+  .description("tail the daemon log")
+  .option("-n, --lines <n>", "lines to show", int, 40)
+  .action(async (opts) => process.exit(await daemonLog(opts.lines)));
+daemon
+  .command("run", { hidden: true })
+  .requiredOption("--project <root>")
+  .option("--idle <dur>")
+  .option("-v, --verbose")
+  .action(async (opts) => process.exit(await daemonRun(opts.project, opts)));
 
 program
   .command("types")

@@ -135,6 +135,17 @@ Use it to mix MCP data with local CLIs (git, gh, jq) inside one script.
 jq -c '.response[] | {incident_id: .id}' incidents.json | dcompose call pagerduty.list_incident_notes --each --concurrency 5
 \`\`\`
 
+## Speed: start the daemon once per session
+
+Each dcompose command normally spawns the MCP servers fresh (several seconds for \`uvx\`/\`npx\`
+servers). A per-project daemon keeps them connected; every command uses it automatically when
+it is running, and reloads it if the config changed.
+
+\`\`\`sh
+dcompose daemon start      # once; exits itself after 1h idle
+dcompose daemon status     # which servers are warm
+\`\`\`
+
 ## Inspecting runs
 
 \`\`\`sh

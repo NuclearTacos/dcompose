@@ -209,8 +209,15 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    `runs` / `runs show`. Scenario 2 mechanics verified with a PagerDuty incident watcher:
    baseline run records 29 open incidents and returns; second run polls and exits 2 on
    `--timeout`. The real Teams version still needs a Graph-capable MCP server dcompose can reach.
-5. **Daemon.** `dcompose daemon` keeps MCP connections warm over a local socket; `run`
-   uses it when present. Fixes per-run cold start and OAuth re-prompts.
+5. **Daemon.** ✅ Done 2026-09-11. One detached daemon per project root (named pipe on
+   Windows, Unix socket elsewhere), NDJSON request/response, reusing `Registry`/`Server`
+   unchanged on the server side. On the client side `Server` gains a `remote` mode that
+   delegates `listTools`/`callTool`/`serverInfo` over the socket. Discovery via
+   `.dcompose/daemon.json`; stale records are cleaned up; `--no-daemon`, `DCOMPOSE_NO_DAEMON`,
+   or `--config` force direct mode. Config-hash mismatch triggers a `reload`. Transport
+   `onclose` resets a server so a dead MCP process reconnects on next call. Idle exit (1h).
+   Measured: `tools pagerduty` 3.0 s direct → 0.4 s via daemon; warm-up of all three servers
+   ~2.7 s once. `autoStart` is opt-in config so no surprise background processes.
 6. **MCP mode.** `dcompose mcp` exposes `search_tools` and `run_script` for non-shell hosts.
 
 ## Open questions
