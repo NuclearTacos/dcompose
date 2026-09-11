@@ -70,7 +70,7 @@ each full record landing in context. With dcompose:
 
 ```ts
 // .dcompose/scripts/active-employee-names.ts
-import type { Ctx } from "dcompose";
+import type { Ctx } from "dcompose";  // resolves once phase 3 writes .dcompose/types/
 
 export default async function ({ mcp, pmap }: Ctx) {
   const all = await mcp.hr.list_employees({});

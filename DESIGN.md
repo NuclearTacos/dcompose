@@ -116,8 +116,8 @@ dcompose is one filter in a pipeline, not a walled garden. Rules:
   summaries, progress on stderr. Colour and summaries auto-disable when stdout is not a TTY.
 - **Output shaping flags** mirror `jq`: `--jsonl` prints one line per array element,
   `-r/--raw-output` prints bare strings without quotes, `-c` compact (default when piped).
-- **stdin is input.** If stdin is not a TTY it is available as `ctx.stdin` (text),
-  `ctx.stdin.json()`, and `ctx.stdin.lines()` (async iterator, NDJSON-friendly). `--input -`
+- **stdin is input.** If stdin is not a TTY it is available as `ctx.stdin.text()`,
+  `ctx.stdin.json()`, `ctx.stdin.lines()`, and `ctx.stdin.jsonl()` (async iterators). `--input -`
   makes stdin the `input` object.
 - **`dcompose eval '<code>'`** runs an inline async body with the same context, like `node -e`.
 - **`dcompose call <server.tool> --each`** reads NDJSON args from stdin, one call per line,
@@ -182,8 +182,13 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    `tools`, `call`, result parsing, exit codes. Verified against pagerduty (uvx), chrome-devtools
    (npx on Windows), and datagrip (HTTP). Observed: uvx cold start is ~5 s per invocation, which
    is the motivation for the phase 5 daemon.
-2. **`run` with the `mcp` proxy.** JSON auto-parse, `pmap`, `input`, stdout/stderr split,
-   exit codes, run trace file. Scenario 1 works here.
+2. **`run` with the `mcp` proxy.** ✅ Done 2026-09-11. Proxy-based `mcp.server.tool()`, `pmap`,
+   `input` (inline / file / stdin), `stdin` helper, `eval` for one-liners, run IDs
+   (`<UTC>-<ULID>`), NDJSON trace files, stderr summary, output cap that spills to a
+   `.result.json` and leaves valid JSON on stdout. Pulled forward from phase 4 because the runner
+   needed the seams anyway: `--timeout`, `--max-calls`, `--allow`/`--deny`, `--read-only`,
+   `--dry-run`, `sleep`, `emit`. Scenario 1 verified against PagerDuty (list → fan-out → compact).
+   Phase 4 now reduces to `store`, `--stream`, `--allow-exec` / `sh()`, and the monitor pattern docs.
 3. **Types + agent onboarding.** `types` command, `init` writes `SKILL.md` teaching the
    workflow: `tools` → read `.d.ts` → write script → `run`. Test it by letting Claude Code
    solve scenario 1 cold.

@@ -179,3 +179,29 @@ export function writeConfigFile(path: string, config: { mcpServers?: Record<stri
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(config, null, 2) + "\n", "utf8");
 }
+
+/** Nearest ancestor (including cwd) containing dcompose.json or dcompose.local.json; else cwd. */
+export function findProjectRoot(cwd = process.cwd()): string {
+  let dir = resolve(cwd);
+  while (true) {
+    if (existsSync(join(dir, CONFIG_FILE)) || existsSync(join(dir, LOCAL_CONFIG_FILE))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return resolve(cwd);
+    dir = parent;
+  }
+}
+
+/** Parse "30s", "5m", "2h", "500ms", or a bare number of milliseconds. 0 = no limit. */
+export function parseDuration(s: string | number): number {
+  if (typeof s === "number") return s;
+  const m = /^(\d+(?:\.\d+)?)(ms|s|m|h)?$/.exec(s.trim());
+  if (!m) throw new ConfigError(`invalid duration: ${s}`);
+  const n = Number(m[1]);
+  switch (m[2]) {
+    case "ms": return n;
+    case "s": return n * 1000;
+    case "m": return n * 60_000;
+    case "h": return n * 3_600_000;
+    default: return n;
+  }
+}

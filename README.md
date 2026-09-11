@@ -4,8 +4,9 @@ Compose MCP tool calls in code instead of one tool call per model round-trip. A 
 coding agent drives through its shell. See [DESIGN.md](DESIGN.md) for the why and
 [EXAMPLES.md](EXAMPLES.md) for the target usage.
 
-**Status: phase 1.** `init`, `servers`, `tools`, `call` work against stdio and HTTP servers.
-`run` (scripts), types, guardrails, and OAuth are not built yet.
+**Status: phase 2.** `init`, `servers`, `tools`, `call`, `run`, and `eval` work against stdio
+and HTTP servers, with run traces and call/timeout/allow/read-only/dry-run guardrails.
+Type generation, the persisted `store`, `--stream`, the daemon, and OAuth are not built yet.
 
 ## Quickstart
 
@@ -23,6 +24,40 @@ dcompose call pagerduty.list_incidents '{"statuses":["triggered"],"limit":3}' | 
 ```
 
 During development, `node src/cli.ts ...` runs the TypeScript directly with no build step.
+
+## Scripts
+
+A script is a module whose default export takes a context and returns the value to print:
+
+```ts
+// .dcompose/scripts/recent-incidents.ts
+import type { Ctx } from "dcompose";
+
+export default async function ({ mcp, pmap, input }: Ctx<{ limit?: number }>) {
+  const { response } = await mcp.pagerduty.list_incidents({ statuses: ["resolved"], limit: input.limit ?? 5 });
+  return pmap(response, async (i) => {
+    const notes = await mcp.pagerduty.list_incident_notes({ incident_id: i.id });
+    return { id: i.id, title: i.title, notes: notes.response.length };
+  }, { concurrency: 4 });
+}
+```
+
+```sh
+dcompose run recent-incidents -i '{"limit":3}' --jsonl     # bare name resolves under .dcompose/scripts/
+dcompose eval '(await mcp.pagerduty.list_oncalls({})).response.map(o => o.user.summary)' -r --jsonl
+```
+
+Context members: `mcp.<server>.<tool>(args)`, `mcp.<server>.raw.<tool>(args)`, `call("server.tool", args)`,
+`input`, `stdin.{text,json,lines,jsonl}()`, `pmap(items, fn, {concurrency})`, `sleep(ms)`,
+`emit(obj)` (NDJSON to stderr), `log(...)`, `runId`, `calls`.
+
+Guardrail flags on `run` and `eval`: `--timeout 30s`, `--max-calls 50`, `--max-output-bytes 64k`,
+`--allow 'pd.list_*'`, `--deny 'pd.resolve_*'`, `--read-only`, `--dry-run`. Hitting one exits 2.
+An oversized result is written to `.dcompose/runs/<id>.result.json` and stdout gets a small
+JSON stub pointing at it, so stdout is always valid JSON.
+
+Every run writes `.dcompose/runs/<UTC time>-<ULID>.jsonl`: a header line, one line per tool
+call (server, tool, arg/result sizes, duration, error), and a summary line.
 
 ## Config
 
