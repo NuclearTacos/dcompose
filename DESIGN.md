@@ -218,7 +218,25 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    `onclose` resets a server so a dead MCP process reconnects on next call. Idle exit (1h).
    Measured: `tools pagerduty` 3.0 s direct → 0.4 s via daemon; warm-up of all three servers
    ~2.7 s once. `autoStart` is opt-in config so no surprise background processes.
-6. **MCP mode.** `dcompose mcp` exposes `search_tools` and `run_script` for non-shell hosts.
+6. **Packs.** Package a set of servers plus curated scripts so they install and run identically
+   somewhere else. A pack is a directory (git repo or npm package) with:
+   - `dcompose.pack.json`: name, version, required env vars with descriptions, exported scripts
+     with their input types, default guardrails per script (read-only, call budget, allow list).
+   - `servers` using `${ENV}` references only; bare command names, no absolute paths.
+   - `scripts/`, a `types/` snapshot with its tool-list hash, a lockfile pinning server versions.
+   - `SKILL.md` describing the pack's tools to an agent.
+   Commands: `pack` (writes manifest + lockfile; refuses literal secrets or absolute paths),
+   `install <source>` (fetch, prompt for missing env, regenerate tsconfig, run doctor),
+   `doctor` (env present, servers connect, live tool hash vs snapshot, scripts type-check).
+   Script input types (`Ctx<{ days?: number }>`) become JSON schemas at pack time so exported
+   scripts have real tool schemas.
+   Known limits: claude.ai connectors cannot be packed (no reachable endpoint, no local
+   credential); per-user OAuth through a shared gateway is deferred until a host needs it.
+7. **MCP mode.** `dcompose mcp [--pack <name>]` serves a pack's exported scripts as MCP tools
+   for non-shell hosts, with manifest guardrails applied to every call, plus optional
+   `search_tools` / `run_script` for hosts trusted with raw access. Defaults to stdio or
+   localhost; remote exposure is a deliberate step that requires its own auth. Solves the
+   localhost-only server problem (DataGrip) by gatewaying from the machine that can reach it.
 
 ## Open questions
 
