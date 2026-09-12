@@ -18,6 +18,9 @@ export function ulid(now = Date.now()): string {
 
 /** `20260911T140211Z-01J7QZ3M8KX4V9R2T6B1N5W0YD` — human-readable UTC prefix, unique suffix. */
 export function runId(now = new Date()): string {
-  const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const stamp = now
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
   return `${stamp}-${ulid(now.getTime())}`;
 }

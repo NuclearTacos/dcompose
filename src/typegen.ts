@@ -88,7 +88,6 @@ async function compileSchema(schema: unknown, name: string, kind: "input" | "out
   const cleaned = stripTitles(structuredClone(schema ?? { type: "object" })) as Record<string, unknown>;
   if (cleaned.type === undefined && cleaned.properties) cleaned.type = "object";
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const out = await compile(cleaned as any, name, {
       bannerComment: "",
       // Inputs are strict: an unknown argument is a real bug. Outputs are open: servers routinely
@@ -102,7 +101,8 @@ async function compileSchema(schema: unknown, name: string, kind: "input" | "out
     // The generator re-cases the requested name (e.g. Foo_bar_Input → FooBar_Input). Pin it back
     // so the method signatures reference a declaration that actually exists.
     const decls = [...out.matchAll(/^export (?:interface|type) ([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]!);
-    if (decls.length === 0) return `export type ${name} = Record<string, unknown>; // generator produced no declaration\n`;
+    if (decls.length === 0)
+      return `export type ${name} = Record<string, unknown>; // generator produced no declaration\n`;
     // Hoisted helpers (from $defs) get a per-tool prefix so `ServiceReference` from one tool cannot
     // merge with a differently-shaped `ServiceReference` from another.
     // Output objects are open (see additionalProperties above); make the extras `any` rather than

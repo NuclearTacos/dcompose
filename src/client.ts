@@ -48,7 +48,11 @@ export class Server {
   private readonly remote: RemoteBackend | null;
   private remoteInfo: { name?: string; version?: string } | null = null;
 
-  constructor(name: string, config: ServerConfig, opts: { connectTimeoutMs: number; verbose: boolean; remote?: RemoteBackend | null }) {
+  constructor(
+    name: string,
+    config: ServerConfig,
+    opts: { connectTimeoutMs: number; verbose: boolean; remote?: RemoteBackend | null },
+  ) {
     this.name = name;
     this.config = config;
     this.connectTimeoutMs = opts.connectTimeoutMs;
@@ -77,9 +81,11 @@ export class Server {
   connect(): Promise<void> {
     if (this.remote) {
       if (this.remoteInfo) return Promise.resolve();
-      return this.remote.request<{ name?: string; version?: string } | null>("serverInfo", { server: this.name }).then((info) => {
-        this.remoteInfo = info ?? {};
-      });
+      return this.remote
+        .request<{ name?: string; version?: string } | null>("serverInfo", { server: this.name })
+        .then((info) => {
+          this.remoteInfo = info ?? {};
+        });
     }
     if (this.client) return Promise.resolve();
     if (!this.connecting) this.connecting = this.doConnect().finally(() => (this.connecting = null));
@@ -91,7 +97,10 @@ export class Server {
     const client = new Client(CLIENT_INFO, { capabilities: {} });
 
     const timer = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`connect timed out after ${this.connectTimeoutMs}ms`)), this.connectTimeoutMs).unref(),
+      setTimeout(
+        () => reject(new Error(`connect timed out after ${this.connectTimeoutMs}ms`)),
+        this.connectTimeoutMs,
+      ).unref(),
     );
 
     try {
@@ -146,7 +155,9 @@ export class Server {
     const msg = cause ? `${e.message} (${cause})` : (e.message ?? String(e));
     const parts = [msg];
     if (/401|unauthorized/i.test(msg)) {
-      parts.push("Server requires authentication. OAuth support (`dcompose auth`) lands in a later phase; for now supply a token via `headers`.");
+      parts.push(
+        "Server requires authentication. OAuth support (`dcompose auth`) lands in a later phase; for now supply a token via `headers`.",
+      );
     }
     if (isStdio(this.config)) {
       if (/ENOENT/.test(msg)) parts.push(`Command not found: ${this.config.command}`);
@@ -175,7 +186,13 @@ export class Server {
 
   async callTool(tool: string, args: Record<string, unknown> = {}, opts: CallOptions = {}): Promise<unknown> {
     if (this.remote) {
-      return this.remote.request("callTool", { server: this.name, tool, args, raw: opts.raw ?? false, timeoutMs: opts.timeoutMs });
+      return this.remote.request("callTool", {
+        server: this.name,
+        tool,
+        args,
+        raw: opts.raw ?? false,
+        timeoutMs: opts.timeoutMs,
+      });
     }
     await this.connect();
     const result = (await this.client!.callTool(
@@ -209,7 +226,14 @@ export class Registry {
   constructor(config: Config, opts: { verbose?: boolean; remote?: RemoteBackend | null } = {}) {
     this.remote = opts.remote ?? null;
     for (const [name, sc] of Object.entries(config.mcpServers)) {
-      this.servers.set(name, new Server(name, sc, { connectTimeoutMs: config.defaults.connectTimeoutMs, verbose: opts.verbose ?? false, remote: this.remote }));
+      this.servers.set(
+        name,
+        new Server(name, sc, {
+          connectTimeoutMs: config.defaults.connectTimeoutMs,
+          verbose: opts.verbose ?? false,
+          remote: this.remote,
+        }),
+      );
     }
   }
 
@@ -225,7 +249,12 @@ export class Registry {
     const s = this.servers.get(name);
     if (!s) {
       const known = this.names();
-      throw new ConnectionError(name, known.length ? `unknown server. Known: ${known.join(", ")}` : "unknown server. No servers configured; run `dcompose init`.");
+      throw new ConnectionError(
+        name,
+        known.length
+          ? `unknown server. Known: ${known.join(", ")}`
+          : "unknown server. No servers configured; run `dcompose init`.",
+      );
     }
     return s;
   }

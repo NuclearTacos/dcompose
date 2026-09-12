@@ -3,7 +3,15 @@ import { createConnection, type Socket } from "node:net";
 import { ConnectionError } from "../client.ts";
 import { ToolError } from "../result.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { recordPath, type DaemonRecord, type DaemonStatus, type Method, type Request, type Response, type WireError } from "./protocol.ts";
+import {
+  recordPath,
+  type DaemonRecord,
+  type DaemonStatus,
+  type Method,
+  type Request,
+  type Response,
+  type WireError,
+} from "./protocol.ts";
 
 /** Thin NDJSON client. One socket, pipelined requests matched by id. */
 export class DaemonClient {
@@ -106,7 +114,11 @@ export class DaemonClient {
 function rebuildError(w: WireError): Error {
   switch (w.kind) {
     case "tool":
-      return new ToolError(w.server ?? "?", w.tool ?? "?", (w.result ?? { content: [{ type: "text", text: w.message }], isError: true }) as CallToolResult);
+      return new ToolError(
+        w.server ?? "?",
+        w.tool ?? "?",
+        (w.result ?? { content: [{ type: "text", text: w.message }], isError: true }) as CallToolResult,
+      );
     case "connection":
       return new ConnectionError(w.server ?? "?", w.message);
     default:

@@ -1,6 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { CONFIG_FILE, LOCAL_CONFIG_FILE, importFromClaude, isStdio, writeConfigFile, type ServerConfig } from "../config.ts";
+import {
+  CONFIG_FILE,
+  LOCAL_CONFIG_FILE,
+  importFromClaude,
+  isStdio,
+  writeConfigFile,
+  type ServerConfig,
+} from "../config.ts";
 import { EXIT } from "../output.ts";
 import { skillMarkdown } from "../skill.ts";
 
@@ -43,7 +50,8 @@ export async function initCommand(cwd: string, opts: InitOptions): Promise<numbe
     // Imported entries may carry env secrets, so they go to the gitignored local file.
     let existing: Record<string, ServerConfig> = {};
     if (existsSync(localPath) && !opts.force) {
-      existing = (JSON.parse(readFileSync(localPath, "utf8")) as { mcpServers?: Record<string, ServerConfig> }).mcpServers ?? {};
+      existing =
+        (JSON.parse(readFileSync(localPath, "utf8")) as { mcpServers?: Record<string, ServerConfig> }).mcpServers ?? {};
     }
     const merged = { ...existing };
     const added: string[] = [];

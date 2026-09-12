@@ -184,7 +184,10 @@ function normaliseClaudeEntry(raw: unknown): unknown {
   return e;
 }
 
-export function writeConfigFile(path: string, config: { mcpServers?: Record<string, ServerConfig>; defaults?: Partial<Config["defaults"]> }): void {
+export function writeConfigFile(
+  path: string,
+  config: { mcpServers?: Record<string, ServerConfig>; defaults?: Partial<Config["defaults"]> },
+): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(config, null, 2) + "\n", "utf8");
 }
@@ -207,11 +210,16 @@ export function parseDuration(s: string | number): number {
   if (!m) throw new ConfigError(`invalid duration: ${s}`);
   const n = Number(m[1]);
   switch (m[2]) {
-    case "ms": return n;
-    case "s": return n * 1000;
-    case "m": return n * 60_000;
-    case "h": return n * 3_600_000;
-    default: return n;
+    case "ms":
+      return n;
+    case "s":
+      return n * 1000;
+    case "m":
+      return n * 60_000;
+    case "h":
+      return n * 3_600_000;
+    default:
+      return n;
   }
 }
 

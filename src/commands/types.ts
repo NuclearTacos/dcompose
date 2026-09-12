@@ -53,7 +53,9 @@ export async function typesCommand(registry: Registry, opts: TypesOptions): Prom
 
   const total = [...byServer.values()].reduce((n, t) => n + t.length, 0);
   const withOut = [...byServer.values()].flat().filter((t) => t.outputSchema).length;
-  err(`wrote ${relative(process.cwd(), outPath) || outPath}: ${byServer.size} server${byServer.size === 1 ? "" : "s"}, ${total} tools (${withOut} with output schemas)`);
+  err(
+    `wrote ${relative(process.cwd(), outPath) || outPath}: ${byServer.size} server${byServer.size === 1 ? "" : "s"}, ${total} tools (${withOut} with output schemas)`,
+  );
   return failures ? EXIT.CONFIG : EXIT.OK;
 }
 

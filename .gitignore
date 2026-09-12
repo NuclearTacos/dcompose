@@ -7,3 +7,4 @@ dcompose.local.json
 .dcompose/tsconfig.json
 .dcompose/daemon.json
 .dcompose/daemon.log
+.dcompose/types/

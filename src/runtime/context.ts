@@ -92,8 +92,10 @@ export function buildContext(opts: ContextOptions): Ctx {
   const { registry, trace } = opts;
 
   async function shell(command: string, shOpts?: ShOptions): Promise<ShResult> {
-    if (!opts.allowExec) throw new GuardrailError("exec-denied", `sh() requires --allow-exec; refused: ${command.slice(0, 80)}`);
-    if (opts.maxCalls > 0 && trace.calls >= opts.maxCalls) throw new GuardrailError("max-calls", `call budget exhausted (${opts.maxCalls}); attempted sh()`);
+    if (!opts.allowExec)
+      throw new GuardrailError("exec-denied", `sh() requires --allow-exec; refused: ${command.slice(0, 80)}`);
+    if (opts.maxCalls > 0 && trace.calls >= opts.maxCalls)
+      throw new GuardrailError("max-calls", `call budget exhausted (${opts.maxCalls}); attempted sh()`);
     const label = command.trim().split(/\s+/)[0] ?? "sh";
     if (opts.dryRun) {
       trace.record({ server: "$sh", tool: label, argsBytes: byteLength(command), ms: 0, resultBytes: 0 });
@@ -103,15 +105,34 @@ export function buildContext(opts: ContextOptions): Ctx {
     const started = Date.now();
     try {
       const r = await runSh(command, shOpts);
-      trace.record({ server: "$sh", tool: label, argsBytes: byteLength(command), ms: Date.now() - started, resultBytes: byteLength(r.stdout), error: r.code === 0 ? undefined : `exit ${r.code}` });
+      trace.record({
+        server: "$sh",
+        tool: label,
+        argsBytes: byteLength(command),
+        ms: Date.now() - started,
+        resultBytes: byteLength(r.stdout),
+        error: r.code === 0 ? undefined : `exit ${r.code}`,
+      });
       return r;
     } catch (e) {
-      trace.record({ server: "$sh", tool: label, argsBytes: byteLength(command), ms: Date.now() - started, resultBytes: 0, error: (e as Error).message });
+      trace.record({
+        server: "$sh",
+        tool: label,
+        argsBytes: byteLength(command),
+        ms: Date.now() - started,
+        resultBytes: 0,
+        error: (e as Error).message,
+      });
       throw e;
     }
   }
 
-  async function invoke(server: string, tool: string, args: Record<string, unknown> | undefined, raw: boolean): Promise<unknown> {
+  async function invoke(
+    server: string,
+    tool: string,
+    args: Record<string, unknown> | undefined,
+    raw: boolean,
+  ): Promise<unknown> {
     const qualified = `${server}.${tool}`;
     if (opts.maxCalls > 0 && trace.calls >= opts.maxCalls) {
       throw new GuardrailError("max-calls", `call budget exhausted (${opts.maxCalls}); attempted ${qualified}`);
@@ -123,7 +144,8 @@ export function buildContext(opts: ContextOptions): Ctx {
     if (opts.readOnly) {
       const info = (await s.listTools()).find((t) => t.name === tool);
       if (!info) throw new Error(`${qualified}: unknown tool`);
-      if (!info.readOnly) throw new GuardrailError("read-only", `${qualified} is not marked readOnlyHint and --read-only is set`);
+      if (!info.readOnly)
+        throw new GuardrailError("read-only", `${qualified} is not marked readOnlyHint and --read-only is set`);
     }
 
     const started = Date.now();
@@ -134,10 +156,23 @@ export function buildContext(opts: ContextOptions): Ctx {
     }
     try {
       const result = await s.callTool(tool, args ?? {}, { raw, timeoutMs: opts.callTimeoutMs });
-      trace.record({ server, tool, argsBytes: byteLength(args ?? {}), ms: Date.now() - started, resultBytes: byteLength(result) });
+      trace.record({
+        server,
+        tool,
+        argsBytes: byteLength(args ?? {}),
+        ms: Date.now() - started,
+        resultBytes: byteLength(result),
+      });
       return result;
     } catch (e) {
-      trace.record({ server, tool, argsBytes: byteLength(args ?? {}), ms: Date.now() - started, resultBytes: 0, error: (e as Error).message });
+      trace.record({
+        server,
+        tool,
+        argsBytes: byteLength(args ?? {}),
+        ms: Date.now() - started,
+        resultBytes: 0,
+        error: (e as Error).message,
+      });
       throw e;
     }
   }
@@ -177,7 +212,8 @@ export function buildContext(opts: ContextOptions): Ctx {
     pmap: (items, fn, o) => pmap(items, fn, { concurrency: opts.defaultConcurrency, ...o }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     emit: (event) => process.stderr.write(JSON.stringify(event) + "\n"),
-    log: (...parts) => process.stderr.write(parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ") + "\n"),
+    log: (...parts) =>
+      process.stderr.write(parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ") + "\n"),
     runId: trace.header.runId,
     get calls() {
       return trace.calls;

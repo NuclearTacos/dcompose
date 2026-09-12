@@ -4,7 +4,15 @@ import { dirname } from "node:path";
 import { ConnectionError, Registry } from "../client.ts";
 import { loadConfig, configHash, type Config } from "../config.ts";
 import { ToolError } from "../result.ts";
-import { recordPath, socketPath, type DaemonRecord, type DaemonStatus, type Request, type Response, type WireError } from "./protocol.ts";
+import {
+  recordPath,
+  socketPath,
+  type DaemonRecord,
+  type DaemonStatus,
+  type Request,
+  type Response,
+  type WireError,
+} from "./protocol.ts";
 
 export interface DaemonOptions {
   projectRoot: string;
@@ -45,7 +53,13 @@ export class DaemonServer {
       this.net!.once("error", rej);
       this.net!.listen(this.socket, () => res());
     });
-    const rec: DaemonRecord = { pid: process.pid, socket: this.socket, projectRoot: this.opts.projectRoot, configHash: this.hash, startedAt: new Date(this.startedAt).toISOString() };
+    const rec: DaemonRecord = {
+      pid: process.pid,
+      socket: this.socket,
+      projectRoot: this.opts.projectRoot,
+      configHash: this.hash,
+      startedAt: new Date(this.startedAt).toISOString(),
+    };
     mkdirSync(dirname(recordPath(this.opts.projectRoot)), { recursive: true });
     writeFileSync(recordPath(this.opts.projectRoot), JSON.stringify(rec, null, 2) + "\n");
     this.touch();
@@ -141,7 +155,10 @@ export class DaemonServer {
       }
       case "callTool": {
         const s = this.registry.get(String(p.server));
-        return s.callTool(String(p.tool), (p.args as Record<string, unknown>) ?? {}, { raw: Boolean(p.raw), timeoutMs: typeof p.timeoutMs === "number" ? p.timeoutMs : undefined });
+        return s.callTool(String(p.tool), (p.args as Record<string, unknown>) ?? {}, {
+          raw: Boolean(p.raw),
+          timeoutMs: typeof p.timeoutMs === "number" ? p.timeoutMs : undefined,
+        });
       }
       case "reload": {
         // Config changed on disk: drop everything and rebuild. Connections re-warm lazily.
@@ -170,13 +187,17 @@ export class DaemonServer {
       idleMs: this.opts.idleMs,
       uptimeMs: Date.now() - this.startedAt,
       requests: this.requests,
-      servers: this.registry.all().map((s) => ({ name: s.name, transport: s.transportKind, connected: s.connected, tools: s.cachedToolCount })),
+      servers: this.registry
+        .all()
+        .map((s) => ({ name: s.name, transport: s.transportKind, connected: s.connected, tools: s.cachedToolCount })),
     };
   }
 }
 
 function toWire(e: unknown): WireError {
-  if (e instanceof ToolError) return { kind: "tool", message: e.message, server: e.server, tool: e.tool, result: e.result };
-  if (e instanceof ConnectionError) return { kind: "connection", message: e.message.replace(new RegExp(`^${e.server}: `), ""), server: e.server };
+  if (e instanceof ToolError)
+    return { kind: "tool", message: e.message, server: e.server, tool: e.tool, result: e.result };
+  if (e instanceof ConnectionError)
+    return { kind: "connection", message: e.message.replace(new RegExp(`^${e.server}: `), ""), server: e.server };
   return { kind: "internal", message: (e as Error).message ?? String(e) };
 }

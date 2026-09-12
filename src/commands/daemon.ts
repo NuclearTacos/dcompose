@@ -39,7 +39,9 @@ export async function daemonStart(opts: DaemonOpts): Promise<number> {
   }
   const s = await client.status();
   client.close();
-  err(`daemon ready on ${s.servers.length} server${s.servers.length === 1 ? "" : "s"}; idle timeout ${s.idleMs ? fmtMs(s.idleMs) : "off"}`);
+  err(
+    `daemon ready on ${s.servers.length} server${s.servers.length === 1 ? "" : "s"}; idle timeout ${s.idleMs ? fmtMs(s.idleMs) : "off"}`,
+  );
   return EXIT.OK;
 }
 
@@ -108,7 +110,8 @@ export async function daemonStop(): Promise<number> {
     client.close();
     // Wait for the socket to actually go away so `stop && start` is safe.
     const deadline = Date.now() + 5000;
-    while (Date.now() < deadline && (await DaemonClient.tryConnect(socketPath(root), 200))) await new Promise((r) => setTimeout(r, 100));
+    while (Date.now() < deadline && (await DaemonClient.tryConnect(socketPath(root), 200)))
+      await new Promise((r) => setTimeout(r, 100));
     err("daemon stopped");
     return EXIT.OK;
   }
@@ -145,9 +148,12 @@ export async function daemonStatus(opts: DaemonOpts): Promise<number> {
     emitResult({ running: true, ...s });
     return EXIT.OK;
   }
-  process.stdout.write(`pid ${s.pid} · up ${fmtMs(s.uptimeMs)} · ${s.requests} requests · idle timeout ${s.idleMs ? fmtMs(s.idleMs) : "off"} · config ${s.configHash}\n`);
+  process.stdout.write(
+    `pid ${s.pid} · up ${fmtMs(s.uptimeMs)} · ${s.requests} requests · idle timeout ${s.idleMs ? fmtMs(s.idleMs) : "off"} · config ${s.configHash}\n`,
+  );
   const rows = [["SERVER", "TRANSPORT", "STATE", "TOOLS"]];
-  for (const sv of s.servers) rows.push([sv.name, sv.transport, sv.connected ? "warm" : "cold", sv.tools === null ? "-" : String(sv.tools)]);
+  for (const sv of s.servers)
+    rows.push([sv.name, sv.transport, sv.connected ? "warm" : "cold", sv.tools === null ? "-" : String(sv.tools)]);
   process.stdout.write(table(rows) + "\n");
   return EXIT.OK;
 }
@@ -162,4 +168,3 @@ export async function daemonLog(lines: number): Promise<number> {
   process.stdout.write(all.slice(-lines).join("\n") + "\n");
   return EXIT.OK;
 }
-

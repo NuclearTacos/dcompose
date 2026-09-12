@@ -23,16 +23,27 @@ export async function checkCommand(scripts: string[], opts: CheckOptions): Promi
   }
 
   const tsMod = loadTypescript(projectRoot);
-  const parsed = tsMod.getParsedCommandLineOfConfigFile(tsconfigPath, {}, {
-    ...tsMod.sys,
-    onUnRecoverableConfigFileDiagnostic: (d) => {
-      throw new Error(tsMod.flattenDiagnosticMessageText(d.messageText, "\n"));
+  const parsed = tsMod.getParsedCommandLineOfConfigFile(
+    tsconfigPath,
+    {},
+    {
+      ...tsMod.sys,
+      onUnRecoverableConfigFileDiagnostic: (d) => {
+        throw new Error(tsMod.flattenDiagnosticMessageText(d.messageText, "\n"));
+      },
     },
-  });
+  );
   if (!parsed) throw new Error(`could not parse ${tsconfigPath}`);
 
-  const only = scripts.length ? new Set(scripts.map((s) => resolve(resolveScript(s, projectRoot)).toLowerCase()).map(norm)) : null;
-  const rootNames = only ? [...parsed.fileNames.filter((f) => only.has(norm(resolve(f)))), ...[...only].filter((f) => !parsed.fileNames.some((p) => norm(resolve(p)) === f))] : parsed.fileNames;
+  const only = scripts.length
+    ? new Set(scripts.map((s) => resolve(resolveScript(s, projectRoot)).toLowerCase()).map(norm))
+    : null;
+  const rootNames = only
+    ? [
+        ...parsed.fileNames.filter((f) => only.has(norm(resolve(f)))),
+        ...[...only].filter((f) => !parsed.fileNames.some((p) => norm(resolve(p)) === f)),
+      ]
+    : parsed.fileNames;
   // Always include the generated types so the module augmentation is in scope.
   const typesFile = join(dir, "types", "mcp.d.ts");
   if (existsSync(typesFile) && !rootNames.some((f) => norm(resolve(f)) === norm(typesFile))) rootNames.push(typesFile);
@@ -46,15 +57,27 @@ export async function checkCommand(scripts: string[], opts: CheckOptions): Promi
       JSON.stringify(
         diags.map((d) => {
           const pos = d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start) : null;
-          return { file: d.file?.fileName, line: pos ? pos.line + 1 : null, col: pos ? pos.character + 1 : null, code: d.code, message: tsMod.flattenDiagnosticMessageText(d.messageText, "\n") };
+          return {
+            file: d.file?.fileName,
+            line: pos ? pos.line + 1 : null,
+            col: pos ? pos.character + 1 : null,
+            code: d.code,
+            message: tsMod.flattenDiagnosticMessageText(d.messageText, "\n"),
+          };
         }),
       ) + "\n",
     );
   } else {
-    const host: ts.FormatDiagnosticsHost = { getCanonicalFileName: (f) => f, getCurrentDirectory: () => process.cwd(), getNewLine: () => "\n" };
+    const host: ts.FormatDiagnosticsHost = {
+      getCanonicalFileName: (f) => f,
+      getCurrentDirectory: () => process.cwd(),
+      getNewLine: () => "\n",
+    };
     if (diags.length) process.stderr.write(tsMod.formatDiagnosticsWithColorAndContext(diags, host));
     const checked = only ? only.size : rootNames.filter((f) => !f.endsWith(".d.ts")).length;
-    process.stderr.write(`${diags.length === 0 ? "ok" : `${diags.length} error${diags.length === 1 ? "" : "s"}`} · ${checked} script${checked === 1 ? "" : "s"} checked\n`);
+    process.stderr.write(
+      `${diags.length === 0 ? "ok" : `${diags.length} error${diags.length === 1 ? "" : "s"}`} · ${checked} script${checked === 1 ? "" : "s"} checked\n`,
+    );
   }
   return diags.length ? EXIT.SCRIPT_ERROR : EXIT.OK;
 }

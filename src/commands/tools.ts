@@ -26,7 +26,10 @@ export async function toolsCommand(registry: Registry, opts: ToolsOptions): Prom
   let tools = lists.flat();
   if (opts.grep) {
     const needle = opts.grep.toLowerCase();
-    tools = tools.filter((t) => `${t.server}.${t.name}`.toLowerCase().includes(needle) || (t.description ?? "").toLowerCase().includes(needle));
+    tools = tools.filter(
+      (t) =>
+        `${t.server}.${t.name}`.toLowerCase().includes(needle) || (t.description ?? "").toLowerCase().includes(needle),
+    );
   }
 
   if (opts.json) {

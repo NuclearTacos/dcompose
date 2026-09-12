@@ -48,7 +48,10 @@ export default async function ({ mcp, pmap, input, log, emit }: Ctx<Input>) {
   const perService = input.notesPerService ?? 3;
   const noteCounts = await pmap(
     top.flatMap((s) => s.recent.slice(-perService).map((i) => ({ service: s.service, id: i.id }))),
-    async ({ service, id }) => ({ service, notes: (await mcp.pagerduty.list_incident_notes({ incident_id: id })).response?.length ?? 0 }),
+    async ({ service, id }) => ({
+      service,
+      notes: (await mcp.pagerduty.list_incident_notes({ incident_id: id })).response?.length ?? 0,
+    }),
     { concurrency: 5 },
   );
   const notesByService = new Map<string, number>();

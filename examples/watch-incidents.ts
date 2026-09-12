@@ -8,13 +8,22 @@ export default async function ({ mcp, store, sleep, emit, input }: Ctx<{ interva
   const first = Object.keys(seen).length === 0;
 
   while (true) {
-    const { response } = await mcp.pagerduty.list_incidents({ statuses: input.statuses ?? ["triggered", "acknowledged"], limit: 100 });
+    const { response } = await mcp.pagerduty.list_incidents({
+      statuses: input.statuses ?? ["triggered", "acknowledged"],
+      limit: 100,
+    });
     const changes = [];
     for (const i of response) {
       const prev = seen[i.id];
       if (prev === i.status) continue;
       seen[i.id] = i.status;
-      changes.push({ id: i.id, number: i.incident_number, title: i.title, status: i.status, kind: prev ? "status-change" : "new" });
+      changes.push({
+        id: i.id,
+        number: i.incident_number,
+        title: i.title,
+        status: i.status,
+        kind: prev ? "status-change" : "new",
+      });
     }
     await store.set("seen", seen);
 

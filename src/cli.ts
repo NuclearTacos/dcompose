@@ -50,7 +50,8 @@ async function registry(): Promise<Registry> {
   if (useDaemon) {
     const root = findProjectRoot();
     daemonClient = await DaemonClient.forProject(root);
-    if (!daemonClient && config.daemon.autoStart) daemonClient = await ensureDaemon(root, (s) => process.stderr.write(s + "\n"));
+    if (!daemonClient && config.daemon.autoStart)
+      daemonClient = await ensureDaemon(root, (s) => process.stderr.write(s + "\n"));
     if (daemonClient) {
       // Config edited since the daemon started? Ask it to reload so we never run against stale servers.
       const want = configHash({ config, sources: [] });
@@ -128,7 +129,10 @@ program
   .option("-c, --compact", "single-line JSON even on a TTY")
   .option("--pretty", "indented JSON even when piped")
   .option("--timeout <ms>", "per-call timeout in milliseconds", int)
-  .option("--each", "read NDJSON arg objects from stdin, one call per line, NDJSON results out (inline JSON = defaults)")
+  .option(
+    "--each",
+    "read NDJSON arg objects from stdin, one call per line, NDJSON results out (inline JSON = defaults)",
+  )
   .option("--concurrency <n>", "parallel calls for --each (default 5)", int)
   .action((qualified, args, opts) => run((r) => callCommand(r, qualified, args, opts)));
 
@@ -226,13 +230,13 @@ const runFlags = (c: Command) =>
 runFlags(
   program
     .command("run <script>")
-    .description("run a script module: export default async (ctx) => value. Bare names resolve under .dcompose/scripts/"),
+    .description(
+      "run a script module: export default async (ctx) => value. Bare names resolve under .dcompose/scripts/",
+    ),
 ).action((script, opts) => run((r) => runCommand(r, loaded!, { script }, opts)));
 
 runFlags(
-  program
-    .command("eval <code>")
-    .description("run an inline expression or async body with the same context as run"),
+  program.command("eval <code>").description("run an inline expression or async body with the same context as run"),
 ).action((code, opts) => run((r) => runCommand(r, loaded!, { code }, opts)));
 
 program.parseAsync(process.argv).catch((e) => {

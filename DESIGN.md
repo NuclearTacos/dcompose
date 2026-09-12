@@ -6,15 +6,15 @@ packaged as a local CLI that Claude Code drives through Bash.
 
 ## Why a CLI first, MCP server second
 
-| Concern | CLI (`dcompose run script.ts`) | MCP server (`run_script` tool) |
-|---|---|---|
-| Script authoring | Agent writes a real file with Write/Edit, can diff and re-run | Script is a string argument in a tool call; clunky to edit |
-| Long-running / monitor | Bash `run_in_background`; agent is re-invoked when process exits | Request/response; times out or blocks the host |
-| Reuse | Scripts accumulate in `.dcompose/scripts/` as a library | Ephemeral |
-| Discovery of tool types | Agent reads a generated `.d.ts` file | Must return types in a tool result |
-| Setup | Zero registration, works in any host with a shell | Needs host registration |
-| Cold start | Spawns/connects MCP servers per run (fix with daemon, phase 5) | Connections stay warm |
-| Portability to non-shell hosts | No | Yes |
+| Concern                        | CLI (`dcompose run script.ts`)                                   | MCP server (`run_script` tool)                             |
+| ------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| Script authoring               | Agent writes a real file with Write/Edit, can diff and re-run    | Script is a string argument in a tool call; clunky to edit |
+| Long-running / monitor         | Bash `run_in_background`; agent is re-invoked when process exits | Request/response; times out or blocks the host             |
+| Reuse                          | Scripts accumulate in `.dcompose/scripts/` as a library          | Ephemeral                                                  |
+| Discovery of tool types        | Agent reads a generated `.d.ts` file                             | Must return types in a tool result                         |
+| Setup                          | Zero registration, works in any host with a shell                | Needs host registration                                    |
+| Cold start                     | Spawns/connects MCP servers per run (fix with daemon, phase 5)   | Connections stay warm                                      |
+| Portability to non-shell hosts | No                                                               | Yes                                                        |
 
 Decision: build the engine as a library, ship the CLI first, add `dcompose mcp` (an MCP
 server exposing `search_tools` + `run_script`) in phase 6 for hosts without a shell.
@@ -23,8 +23,8 @@ server exposing `search_tools` + `run_script`) in phase 6 for hosts without a sh
 
 dcompose runs as a separate process, so it can only reach MCP servers it can connect to itself:
 stdio servers and remote HTTP servers where dcompose does its own OAuth. It **cannot** use
-Claude Code's claude.ai-hosted connectors (Microsoft 365, Rock MCP Staging, etc.); those tokens
-live inside Claude Code. Scenario 2 (Teams) therefore needs a Teams/Graph MCP server that
+Claude Code's claude.ai-hosted connectors (Microsoft 365, Notion, etc.); those tokens
+live inside Claude Code. Scenario 2 (Slack) therefore needs a Slack MCP server that
 dcompose configures directly.
 
 ## Script model
@@ -37,27 +37,27 @@ stdout. Logs go to stderr so stdout stays machine-readable.
 // .dcompose/scripts/active-employee-names.ts
 export default async function ({ mcp, pmap }) {
   const all = await mcp.hr.listEmployees({});
-  const active = all.filter(e => e.active);
-  return pmap(active, e => mcp.hr.getEmployee({ id: e.id }).then(r => r.name), { concurrency: 5 });
+  const active = all.filter((e) => e.active);
+  return pmap(active, (e) => mcp.hr.getEmployee({ id: e.id }).then((r) => r.name), { concurrency: 5 });
 }
 ```
 
 ```ts
-// .dcompose/scripts/watch-teams.ts  — exits when something is worth the agent's attention
+// .dcompose/scripts/watch-slack.ts  — exits when something is worth the agent's attention
 export default async function ({ mcp, input, store, sleep, emit }) {
-  const watched: string[] = input.watched;              // decided by the agent, passed as --input
-  const seen = (await store.get("seen")) ?? {};         // persisted between runs
+  const watched: string[] = input.watched; // decided by the agent, passed as --input
+  const seen = (await store.get("seen")) ?? {}; // persisted between runs
   while (true) {
-    const chats = await mcp.teams.listChats({});
-    for (const c of chats) {
-      const last = c.lastMessageId;
+    const channels = await mcp.slack.list_channels({});
+    for (const c of channels) {
+      const last = c.latest_ts;
       if (seen[c.id] === last) continue;
       const isNew = !(c.id in seen);
       seen[c.id] = last;
       await store.set("seen", seen);
-      if (isNew) return { kind: "new-chat", chat: c };             // agent must decide watch/ignore
-      if (watched.includes(c.id)) return { kind: "message", chat: c };
-      emit({ kind: "ignored", chat: c.id });                        // stderr NDJSON, not a return
+      if (isNew) return { kind: "new-channel", channel: c }; // agent must decide watch/ignore
+      if (watched.includes(c.id)) return { kind: "message", channel: c };
+      emit({ kind: "ignored", channel: c.id }); // stderr NDJSON, not a return
     }
     await sleep(input.intervalMs ?? 30_000);
   }
@@ -66,16 +66,16 @@ export default async function ({ mcp, input, store, sleep, emit }) {
 
 ### Runtime API injected into scripts
 
-| Name | Purpose |
-|---|---|
-| `mcp.<server>.<tool>(args)` | Proxy that calls the tool. Parses JSON text content; returns `structuredContent` when present. Throws on `isError`. |
-| `mcp.<server>.raw.<tool>(args)` | Unparsed MCP result for when auto-parse guesses wrong. |
-| `input` | Parsed `--input '<json>'` or `--input-file`. |
-| `pmap(items, fn, {concurrency})` | Bounded-concurrency map. Most compositions need this. |
-| `sleep(ms)` | For polling loops. |
-| `emit(obj)` | Writes one NDJSON line to stderr (progress / interim events). |
-| `store.get/set/delete` | JSON KV persisted at `.dcompose/state/<script-name>.json`. |
-| `log(...)` | stderr, human-readable. |
+| Name                             | Purpose                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `mcp.<server>.<tool>(args)`      | Proxy that calls the tool. Parses JSON text content; returns `structuredContent` when present. Throws on `isError`. |
+| `mcp.<server>.raw.<tool>(args)`  | Unparsed MCP result for when auto-parse guesses wrong.                                                              |
+| `input`                          | Parsed `--input '<json>'` or `--input-file`.                                                                        |
+| `pmap(items, fn, {concurrency})` | Bounded-concurrency map. Most compositions need this.                                                               |
+| `sleep(ms)`                      | For polling loops.                                                                                                  |
+| `emit(obj)`                      | Writes one NDJSON line to stderr (progress / interim events).                                                       |
+| `store.get/set/delete`           | JSON KV persisted at `.dcompose/state/<script-name>.json`.                                                          |
+| `log(...)`                       | stderr, human-readable.                                                                                             |
 
 ### Result handling
 
@@ -138,8 +138,8 @@ dcompose is one filter in a pipeline, not a walled garden. Rules:
 ```json
 {
   "mcpServers": {
-    "hr":    { "command": "npx", "args": ["-y", "some-hr-mcp"] },
-    "teams": { "type": "http", "url": "https://.../mcp", "oauth": true }
+    "hr": { "command": "npx", "args": ["-y", "some-hr-mcp"] },
+    "slack": { "type": "http", "url": "https://.../mcp", "oauth": true }
   },
   "defaults": { "maxCalls": 200, "timeout": "5m", "concurrency": 5 }
 }
@@ -208,7 +208,7 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    `ctx.sh()` gated by `--allow-exec` and traced as `$sh`, `call --each` (the xargs of MCP),
    `runs` / `runs show`. Scenario 2 mechanics verified with a PagerDuty incident watcher:
    baseline run records 29 open incidents and returns; second run polls and exits 2 on
-   `--timeout`. The real Teams version still needs a Graph-capable MCP server dcompose can reach.
+   `--timeout`. The real Slack version still needs a Slack MCP server dcompose can reach.
 5. **Daemon.** ✅ Done 2026-09-11. One detached daemon per project root (named pipe on
    Windows, Unix socket elsewhere), NDJSON request/response, reusing `Registry`/`Server`
    unchanged on the server side. On the client side `Server` gains a `remote` mode that
@@ -225,13 +225,13 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    - `servers` using `${ENV}` references only; bare command names, no absolute paths.
    - `scripts/`, a `types/` snapshot with its tool-list hash, a lockfile pinning server versions.
    - `SKILL.md` describing the pack's tools to an agent.
-   Commands: `pack` (writes manifest + lockfile; refuses literal secrets or absolute paths),
-   `install <source>` (fetch, prompt for missing env, regenerate tsconfig, run doctor),
-   `doctor` (env present, servers connect, live tool hash vs snapshot, scripts type-check).
-   Script input types (`Ctx<{ days?: number }>`) become JSON schemas at pack time so exported
-   scripts have real tool schemas.
-   Known limits: claude.ai connectors cannot be packed (no reachable endpoint, no local
-   credential); per-user OAuth through a shared gateway is deferred until a host needs it.
+     Commands: `pack` (writes manifest + lockfile; refuses literal secrets or absolute paths),
+     `install <source>` (fetch, prompt for missing env, regenerate tsconfig, run doctor),
+     `doctor` (env present, servers connect, live tool hash vs snapshot, scripts type-check).
+     Script input types (`Ctx<{ days?: number }>`) become JSON schemas at pack time so exported
+     scripts have real tool schemas.
+     Known limits: claude.ai connectors cannot be packed (no reachable endpoint, no local
+     credential); per-user OAuth through a shared gateway is deferred until a host needs it.
 7. **MCP mode.** `dcompose mcp [--pack <name>]` serves a pack's exported scripts as MCP tools
    for non-shell hosts, with manifest guardrails applied to every call, plus optional
    `search_tools` / `run_script` for hosts trusted with raw access. Defaults to stdio or
@@ -249,13 +249,13 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
 
 ## Auth regimes (what dcompose can and cannot reuse from Claude Code)
 
-| Regime | Example | dcompose access | Import behaviour |
-|---|---|---|---|
-| Stdio server | pagerduty via `uvx`, chrome-devtools via `npx` | Full. Spawn same command + env. | Copy entry verbatim |
-| Remote + static headers / env var | `"headers": {"Authorization": "Bearer ${TOKEN}"}` | Full. Secret is already in config. | Copy entry verbatim |
-| Remote + OAuth done by Claude Code | Locally added `https://mcp.example.com/mcp` | Do our own OAuth 2.1 flow against the same URL. Do **not** read Claude Code's token store. | Copy URL, mark `"oauth": true`, prompt on first use |
-| claude.ai-hosted connector | `mcp__claude_ai_*` (Microsoft 365, Notion, Atlassian, Rock MCP Staging) | None. Tokens live on Anthropic's servers. | Skip with message; suggest public endpoint if known |
-| Sender-constrained (DPoP / mTLS) or allow-listed client IDs | Enterprise gateways | None until admin registers dcompose | Skip with message |
+| Regime                                                      | Example                                                                 | dcompose access                                                                            | Import behaviour                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| Stdio server                                                | pagerduty via `uvx`, chrome-devtools via `npx`                          | Full. Spawn same command + env.                                                            | Copy entry verbatim                                 |
+| Remote + static headers / env var                           | `"headers": {"Authorization": "Bearer ${TOKEN}"}`                       | Full. Secret is already in config.                                                         | Copy entry verbatim                                 |
+| Remote + OAuth done by Claude Code                          | Locally added `https://mcp.example.com/mcp`                             | Do our own OAuth 2.1 flow against the same URL. Do **not** read Claude Code's token store. | Copy URL, mark `"oauth": true`, prompt on first use |
+| claude.ai-hosted connector                                  | `mcp__claude_ai_*` (Microsoft 365, Notion, Atlassian, Rock MCP Staging) | None. Tokens live on Anthropic's servers.                                                  | Skip with message; suggest public endpoint if known |
+| Sender-constrained (DPoP / mTLS) or allow-listed client IDs | Enterprise gateways                                                     | None until admin registers dcompose                                                        | Skip with message                                   |
 
 Inverse does not help: an MCP server cannot call the host's other tools, so `dcompose mcp`
 is equally isolated from connectors.

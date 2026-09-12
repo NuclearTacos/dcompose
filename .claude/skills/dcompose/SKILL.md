@@ -33,10 +33,14 @@ result as JSON. stderr is logs and a run summary. Exit codes: 0 ok, 1 script or 
 
    export default async function ({ mcp, pmap, input }: Ctx<{ limit?: number }>) {
      const { response } = await mcp.pagerduty.list_incidents({ statuses: ["triggered"], limit: input.limit ?? 20 });
-     return pmap(response, async (i) => {
-       const notes = await mcp.pagerduty.list_incident_notes({ incident_id: i.id });
-       return { id: i.id, title: i.title, notes: notes.response.length };
-     }, { concurrency: 5 });
+     return pmap(
+       response,
+       async (i) => {
+         const notes = await mcp.pagerduty.list_incident_notes({ incident_id: i.id });
+         return { id: i.id, title: i.title, notes: notes.response.length };
+       },
+       { concurrency: 5 },
+     );
    }
    ```
    Return only what you need. Anything you return lands in your context.
@@ -50,18 +54,18 @@ result as JSON. stderr is logs and a run summary. Exit codes: 0 ok, 1 script or 
 
 ## Context passed to the script
 
-| Member | Use |
-|---|---|
-| `mcp.<server>.<tool>(args)` | Call a tool; result is parsed JSON. Hyphenated names: `mcp["chrome-devtools"].list_pages()` |
-| `mcp.<server>.raw.<tool>(args)` | Unparsed MCP envelope when auto-parse is wrong |
-| `call("server.tool", args)` | Same as above by string name |
-| `input` | From `-i '<json>'`, `--input-file <path>`, or `-i -` (stdin) |
-| `stdin.text() / .json() / .lines() / .jsonl()` | Piped data |
-| `pmap(items, fn, { concurrency })` | Bounded fan-out; use this instead of `Promise.all` |
-| `sleep(ms)` | Polling loops |
-| `emit(obj)` | Interim NDJSON event on stderr (not the return value) |
-| `log(...)` | Human-readable stderr |
-| `runId`, `calls` | Current run id; tool calls made so far |
+| Member                                         | Use                                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `mcp.<server>.<tool>(args)`                    | Call a tool; result is parsed JSON. Hyphenated names: `mcp["chrome-devtools"].list_pages()` |
+| `mcp.<server>.raw.<tool>(args)`                | Unparsed MCP envelope when auto-parse is wrong                                              |
+| `call("server.tool", args)`                    | Same as above by string name                                                                |
+| `input`                                        | From `-i '<json>'`, `--input-file <path>`, or `-i -` (stdin)                                |
+| `stdin.text() / .json() / .lines() / .jsonl()` | Piped data                                                                                  |
+| `pmap(items, fn, { concurrency })`             | Bounded fan-out; use this instead of `Promise.all`                                          |
+| `sleep(ms)`                                    | Polling loops                                                                               |
+| `emit(obj)`                                    | Interim NDJSON event on stderr (not the return value)                                       |
+| `log(...)`                                     | Human-readable stderr                                                                       |
+| `runId`, `calls`                               | Current run id; tool calls made so far                                                      |
 
 ## One-liners
 
@@ -96,9 +100,9 @@ export default async function ({ mcp, store, sleep, emit }: Ctx) {
     const { response } = await mcp.pagerduty.list_incidents({ statuses: ["triggered"], limit: 100 });
     const fresh = response.filter((i) => seen[i.id] !== i.status);
     for (const i of response) seen[i.id] = i.status;
-    await store.set("seen", seen);                      // persisted at .dcompose/state/<script>.json
+    await store.set("seen", seen); // persisted at .dcompose/state/<script>.json
     if (fresh.length) return fresh.map((i) => ({ id: i.id, title: i.title, status: i.status }));
-    emit({ kind: "poll", open: response.length });      // stderr, not the result
+    emit({ kind: "poll", open: response.length }); // stderr, not the result
     await sleep(30_000);
   }
 }
@@ -117,7 +121,10 @@ or `tail -f`. Same guardrails apply; `--max-output-bytes` is checked per item.
 
 ```ts
 export default async function* ({ mcp, sleep }: Ctx) {
-  while (true) { yield await mcp.pagerduty.list_oncalls({ limit: 5 }); await sleep(60_000); }
+  while (true) {
+    yield await mcp.pagerduty.list_oncalls({ limit: 5 });
+    await sleep(60_000);
+  }
 }
 ```
 

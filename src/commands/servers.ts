@@ -17,7 +17,14 @@ export async function serversCommand(registry: Registry, opts: { json?: boolean 
       try {
         const tools = await s.listTools();
         const info = s.serverInfo();
-        return { name: s.name, transport: s.transportKind, status: "connected", tools: tools.length, serverName: info?.name, serverVersion: info?.version };
+        return {
+          name: s.name,
+          transport: s.transportKind,
+          status: "connected",
+          tools: tools.length,
+          serverName: info?.name,
+          serverVersion: info?.version,
+        };
       } catch (e) {
         return { name: s.name, transport: s.transportKind, status: "error", tools: null, error: (e as Error).message };
       }
@@ -27,11 +34,19 @@ export async function serversCommand(registry: Registry, opts: { json?: boolean 
   if (opts.json) {
     emitResult(rows);
   } else if (rows.length === 0) {
-    process.stderr.write("No servers configured. Run `dcompose init --import-claude` or add entries to dcompose.json.\n");
+    process.stderr.write(
+      "No servers configured. Run `dcompose init --import-claude` or add entries to dcompose.json.\n",
+    );
   } else {
     const out = [["NAME", "TRANSPORT", "STATUS", "TOOLS", "SERVER"]];
     for (const r of rows) {
-      out.push([r.name, r.transport, r.status, r.tools === null ? "-" : String(r.tools), r.serverName ? `${r.serverName} ${r.serverVersion ?? ""}`.trim() : ""]);
+      out.push([
+        r.name,
+        r.transport,
+        r.status,
+        r.tools === null ? "-" : String(r.tools),
+        r.serverName ? `${r.serverName} ${r.serverVersion ?? ""}`.trim() : "",
+      ]);
     }
     process.stdout.write(table(out) + "\n");
     for (const r of rows) if (r.error) process.stderr.write(`\n${r.error}\n`);

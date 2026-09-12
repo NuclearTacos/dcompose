@@ -25,7 +25,15 @@ export async function runsListCommand(opts: RunsOptions): Promise<number> {
   const shown = runs.slice(0, opts.limit ?? 20);
 
   if (opts.json) {
-    emitResult(shown.map(({ id, header, summary }) => ({ id, label: header?.label, script: header?.script, startedAt: header?.startedAt, ...pick(summary) })));
+    emitResult(
+      shown.map(({ id, header, summary }) => ({
+        id,
+        label: header?.label,
+        script: header?.script,
+        startedAt: header?.startedAt,
+        ...pick(summary),
+      })),
+    );
     return EXIT.OK;
   }
   if (shown.length === 0) {
@@ -58,11 +66,18 @@ export async function runsShowCommand(prefix: string | undefined, opts: RunsOpti
   else matches = runs.slice(0, 1);
 
   if (matches.length === 0) {
-    process.stderr.write(`dcompose: no run matches ${prefix ? `prefix ${prefix}` : opts.label ? `label ${opts.label}` : "(none exist)"}\n`);
+    process.stderr.write(
+      `dcompose: no run matches ${prefix ? `prefix ${prefix}` : opts.label ? `label ${opts.label}` : "(none exist)"}\n`,
+    );
     return EXIT.CONFIG;
   }
   if (matches.length > 1 && prefix) {
-    process.stderr.write(`dcompose: ${matches.length} runs match ${prefix}; be more specific:\n${matches.slice(0, 8).map((m) => `  ${m.id}`).join("\n")}\n`);
+    process.stderr.write(
+      `dcompose: ${matches.length} runs match ${prefix}; be more specific:\n${matches
+        .slice(0, 8)
+        .map((m) => `  ${m.id}`)
+        .join("\n")}\n`,
+    );
     return EXIT.CONFIG;
   }
   const r = matches[0]!;
@@ -81,13 +96,24 @@ export async function runsShowCommand(prefix: string | undefined, opts: RunsOpti
   process.stdout.write(`${r.id}${h?.label ? `  (${h.label})` : ""}\n`);
   if (h) process.stdout.write(`script ${h.script}  started ${h.startedAt}  cwd ${h.cwd}\n`);
   if (h?.argv?.length) process.stdout.write(`argv   ${h.argv.join(" ")}\n`);
-  if (s) process.stdout.write(`${s.exitCode === 0 ? "ok" : `exit ${s.exitCode}${s.reason ? ` (${s.reason})` : ""}`} · ${fmtMs(s.ms)} · ${s.calls} calls · ${s.errors} errors · output ${fmtBytes(s.outputBytes)}\n`);
+  if (s)
+    process.stdout.write(
+      `${s.exitCode === 0 ? "ok" : `exit ${s.exitCode}${s.reason ? ` (${s.reason})` : ""}`} · ${fmtMs(s.ms)} · ${s.calls} calls · ${s.errors} errors · output ${fmtBytes(s.outputBytes)}\n`,
+    );
   else process.stdout.write("no summary line (still running or killed)\n");
   if (r.calls.length) {
     const rows = [["#", "T+", "TOOL", "ARGS", "TIME", "RESULT", "ERROR"]];
     const t0 = h ? Date.parse(h.startedAt) : Date.parse(r.calls[0]!.t);
     for (const c of r.calls) {
-      rows.push([String(c.seq), fmtMs(Date.parse(c.t) - t0), `${c.server}.${c.tool}`, fmtBytes(c.argsBytes), fmtMs(c.ms), fmtBytes(c.resultBytes), c.error ?? ""]);
+      rows.push([
+        String(c.seq),
+        fmtMs(Date.parse(c.t) - t0),
+        `${c.server}.${c.tool}`,
+        fmtBytes(c.argsBytes),
+        fmtMs(c.ms),
+        fmtBytes(c.resultBytes),
+        c.error ?? "",
+      ]);
     }
     process.stdout.write("\n" + table(rows, { maxWidth: [5, 8, 44, 9, 8, 9, 60] }) + "\n");
   }
@@ -122,5 +148,7 @@ function parseRun(path: string, id: string): RunFile {
 }
 
 function pick(s: RunSummary | undefined) {
-  return s ? { ms: s.ms, calls: s.calls, errors: s.errors, exitCode: s.exitCode, outputBytes: s.outputBytes, reason: s.reason } : {};
+  return s
+    ? { ms: s.ms, calls: s.calls, errors: s.errors, exitCode: s.exitCode, outputBytes: s.outputBytes, reason: s.reason }
+    : {};
 }

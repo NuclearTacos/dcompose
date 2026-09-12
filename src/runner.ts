@@ -86,7 +86,10 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
 
   try {
     const fn = opts.code !== undefined ? compileInline(opts.code) : await loadScript(opts.script!, opts.projectRoot);
-    const result = await withTimeout(Promise.resolve().then(() => fn(ctx)), opts.timeoutMs);
+    const result = await withTimeout(
+      Promise.resolve().then(() => fn(ctx)),
+      opts.timeoutMs,
+    );
 
     if (isAsyncIterable(result)) {
       // Streaming script: each yielded item is one NDJSON line on stdout, flushed as it arrives.
@@ -96,7 +99,10 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
           for await (const item of result) {
             const bytes = byteLength(item);
             if (opts.maxOutputBytes > 0 && bytes > opts.maxOutputBytes) {
-              throw new GuardrailError("max-output-bytes", `streamed item #${streamed + 1} is ${fmtBytes(bytes)}, over --max-output-bytes (${fmtBytes(opts.maxOutputBytes)})`);
+              throw new GuardrailError(
+                "max-output-bytes",
+                `streamed item #${streamed + 1} is ${fmtBytes(bytes)}, over --max-output-bytes (${fmtBytes(opts.maxOutputBytes)})`,
+              );
             }
             const raw = opts.output?.raw && typeof item === "string";
             process.stdout.write((raw ? (item as string) : JSON.stringify(item)) + "\n");
@@ -134,9 +140,17 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
   return { exitCode, value, summary, tracePath: trace.path, streamed };
 }
 
-function makeAllow(allow?: string[], deny?: string[]): ((q: string) => boolean) | undefined {
+export function makeAllow(allow?: string[], deny?: string[]): ((q: string) => boolean) | undefined {
   if (!allow?.length && !deny?.length) return undefined;
-  const toRe = (g: string) => new RegExp("^" + g.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+  const toRe = (g: string) =>
+    new RegExp(
+      "^" +
+        g
+          .split("*")
+          .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+          .join(".*") +
+        "$",
+    );
   const allowRes = (allow ?? []).map(toRe);
   const denyRes = (deny ?? []).map(toRe);
   return (q) => {
@@ -165,7 +179,9 @@ export function resolveScript(script: string, projectRoot: string): string {
   throw new Error(`script not found: ${script} (looked in cwd and ${join(projectRoot, ".dcompose", "scripts")})`);
 }
 
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...a: string[]) => (...args: unknown[]) => Promise<unknown>;
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+  ...a: string[]
+) => (...args: unknown[]) => Promise<unknown>;
 const CTX_KEYS = ["mcp", "call", "input", "stdin", "pmap", "sleep", "emit", "log", "runId", "store", "sh"];
 
 /** `dcompose eval`: try as a single expression first, then as a function body. */
@@ -212,6 +228,10 @@ function printSummary(trace: RunTrace, s: RunSummary, streamed: number): void {
   const lines = trace.aggregateLines();
   for (const l of lines) process.stderr.write(`[dcompose] ${l}\n`);
   const status = s.exitCode === 0 ? "done" : `exit ${s.exitCode}${s.reason ? ` (${s.reason})` : ""}`;
-  const out = streamed ? `streamed ${streamed} item${streamed === 1 ? "" : "s"} (${fmtBytes(s.outputBytes)})` : `output ${fmtBytes(s.outputBytes)}`;
-  process.stderr.write(`[dcompose] ${status} in ${fmtMs(s.ms)} · ${s.calls} call${s.calls === 1 ? "" : "s"} · ${out} · trace ${trace.path}\n`);
+  const out = streamed
+    ? `streamed ${streamed} item${streamed === 1 ? "" : "s"} (${fmtBytes(s.outputBytes)})`
+    : `output ${fmtBytes(s.outputBytes)}`;
+  process.stderr.write(
+    `[dcompose] ${status} in ${fmtMs(s.ms)} · ${s.calls} call${s.calls === 1 ? "" : "s"} · ${out} · trace ${trace.path}\n`,
+  );
 }

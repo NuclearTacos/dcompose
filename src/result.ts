@@ -58,7 +58,15 @@ export function tryJson(text: string): unknown {
   if (t === "") return text;
   const first = t[0];
   // Cheap gate before paying for JSON.parse on prose.
-  if (first !== "{" && first !== "[" && first !== '"' && !/^-?\d/.test(t) && t !== "true" && t !== "false" && t !== "null") {
+  if (
+    first !== "{" &&
+    first !== "[" &&
+    first !== '"' &&
+    !/^-?\d/.test(t) &&
+    t !== "true" &&
+    t !== "false" &&
+    t !== "null"
+  ) {
     return text;
   }
   try {

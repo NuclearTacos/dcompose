@@ -19,7 +19,13 @@ export interface CallOptions extends OutputOptions {
  * (merged over any inline JSON as defaults). Output preserves input order; a failed call becomes
  * `{"error": "..."}` on its line and the exit code is 1 at the end.
  */
-async function callEach(server: Server, tool: string, qualified: string, defaultsJson: string | undefined, opts: CallOptions): Promise<number> {
+async function callEach(
+  server: Server,
+  tool: string,
+  qualified: string,
+  defaultsJson: string | undefined,
+  opts: CallOptions,
+): Promise<number> {
   const defaults = defaultsJson && defaultsJson !== "-" ? readArgs(defaultsJson, undefined) : {};
   const lines = readFileSync(0, "utf8")
     .split(/\r?\n/)
@@ -40,7 +46,11 @@ async function callEach(server: Server, tool: string, qualified: string, default
         return { error: `line ${i + 1}: expected an object` };
       }
       try {
-        return await server.callTool(tool, { ...defaults, ...(args as Record<string, unknown>) }, { raw: opts.raw, timeoutMs: opts.timeout });
+        return await server.callTool(
+          tool,
+          { ...defaults, ...(args as Record<string, unknown>) },
+          { raw: opts.raw, timeoutMs: opts.timeout },
+        );
       } catch (e) {
         failures++;
         return { error: e instanceof ToolError ? e.message : `${qualified}: ${(e as Error).message}` };
@@ -48,12 +58,18 @@ async function callEach(server: Server, tool: string, qualified: string, default
     },
     { concurrency: opts.concurrency ?? 5 },
   );
-  for (const r of results) process.stdout.write((opts.rawOutput && typeof r === "string" ? r : JSON.stringify(r)) + "\n");
+  for (const r of results)
+    process.stdout.write((opts.rawOutput && typeof r === "string" ? r : JSON.stringify(r)) + "\n");
   if (failures) process.stderr.write(`dcompose: ${failures} of ${lines.length} calls failed\n`);
   return failures ? EXIT.SCRIPT_ERROR : EXIT.OK;
 }
 
-export async function callCommand(registry: Registry, qualified: string, argsJson: string | undefined, opts: CallOptions): Promise<number> {
+export async function callCommand(
+  registry: Registry,
+  qualified: string,
+  argsJson: string | undefined,
+  opts: CallOptions,
+): Promise<number> {
   const { server, tool } = registry.resolve(qualified);
 
   if (opts.readOnly) {
@@ -92,7 +108,7 @@ function readArgs(inline: string | undefined, file: string | undefined): Record<
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    throw new Error(`arguments are not valid JSON: ${(e as Error).message}`);
+    throw new Error(`arguments are not valid JSON: ${(e as Error).message}`, { cause: e });
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("arguments must be a JSON object");

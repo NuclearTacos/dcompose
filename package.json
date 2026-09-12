@@ -1,10 +1,40 @@
 {
-  "name": "@chrisrea/dcompose",
+  "name": "dcompose",
   "version": "0.1.0",
-  "description": "Compose MCP tool calls in code. Code Mode for shell-driven agents.",
+  "description": "Code Mode for the shell: compose MCP tool calls in TypeScript scripts so only the answer reaches the agent",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "agent",
+    "code-mode",
+    "cli",
+    "typescript",
+    "llm",
+    "tools"
+  ],
+  "author": "Chris Rea",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NuclearTacos/dcompose.git"
+  },
+  "homepage": "https://github.com/NuclearTacos/dcompose#readme",
+  "bugs": {
+    "url": "https://github.com/NuclearTacos/dcompose/issues"
+  },
   "type": "module",
   "bin": {
     "dcompose": "./bin/dcompose.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
     "bin",
@@ -16,9 +46,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node src/cli.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:watch": "node --test --watch \"test/**/*.test.ts\"",
+    "lint": "eslint src test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "ci": "npm run typecheck && npm run lint && npm run format:check && npm run build && npm test"
   },
-  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^22.20.2",
@@ -27,14 +62,10 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
-  },
-  "types": "./dist/index.d.ts",
-  "main": "./dist/index.js",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0"
   }
 }

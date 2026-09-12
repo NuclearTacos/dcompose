@@ -16,14 +16,18 @@ export default async function ({ mcp, log }: Ctx<{ limit?: number }>) {
   for (const p of policies.response as any[]) epName.set(p.id, p.name ?? p.summary ?? p.id);
 
   const serviceToEp = new Map<string, string>();
-  for (const s of services.response as any[]) if (s.escalation_policy?.id) serviceToEp.set(s.id, s.escalation_policy.id);
+  for (const s of services.response as any[])
+    if (s.escalation_policy?.id) serviceToEp.set(s.id, s.escalation_policy.id);
 
   // Open incidents per escalation policy id (via the incident's service).
   const openByEp = new Map<string, number>();
   let unmapped = 0;
   for (const i of incidents.response as any[]) {
     const ep = serviceToEp.get(i.service?.id);
-    if (!ep) { unmapped++; continue; }
+    if (!ep) {
+      unmapped++;
+      continue;
+    }
     openByEp.set(ep, (openByEp.get(ep) ?? 0) + 1);
   }
 
@@ -37,7 +41,9 @@ export default async function ({ mcp, log }: Ctx<{ limit?: number }>) {
     users.set(uid, u);
   }
 
-  log(`oncalls=${oncalls.response.length} policies=${policies.response.length} services=${services.response.length} openIncidents=${incidents.response.length} unmappedIncidents=${unmapped}`);
+  log(
+    `oncalls=${oncalls.response.length} policies=${policies.response.length} services=${services.response.length} openIncidents=${incidents.response.length} unmappedIncidents=${unmapped}`,
+  );
 
   return [...users.values()]
     .map((u) => ({

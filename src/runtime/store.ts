@@ -26,7 +26,7 @@ export function openStore(stateDir: string, name: string): Store {
       try {
         data = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
       } catch (e) {
-        throw new Error(`store ${path} is corrupt: ${(e as Error).message}`);
+        throw new Error(`store ${path} is corrupt: ${(e as Error).message}`, { cause: e });
       }
     } else {
       data = {};

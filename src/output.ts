@@ -21,7 +21,9 @@ export function emitResult(value: unknown, opts: OutputOptions = {}): void {
     for (const item of value) process.stdout.write(line(item, opts.raw) + "\n");
     return;
   }
-  process.stdout.write(opts.raw && typeof value === "string" ? value + "\n" : JSON.stringify(value, null, pretty ? 2 : 0) + "\n");
+  process.stdout.write(
+    opts.raw && typeof value === "string" ? value + "\n" : JSON.stringify(value, null, pretty ? 2 : 0) + "\n",
+  );
 }
 
 function line(item: unknown, raw?: boolean): string {

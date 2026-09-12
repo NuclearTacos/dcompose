@@ -1,6 +1,8 @@
 # dcompose — usage examples
 
-Written from the agent's point of view: what Claude Code would actually type.
+Written from the agent's point of view: what Claude Code would actually type. The `pagerduty`
+examples ran against a live server; the `hr` and `slack` servers are illustrative stand-ins for
+whatever MCP servers a project has configured.
 
 ## Setup (once per project)
 
@@ -17,11 +19,11 @@ NAME             TRANSPORT  STATUS      TOOLS
 pagerduty        stdio      connected   61
 chrome-devtools  stdio      connected   27
 datagrip         http       connected   41
-teams            http       needs-auth  -      run: dcompose auth teams
+slack            http       needs-auth  -      run: dcompose auth slack
 ```
 
 ```sh
-dcompose auth teams                # opens browser, OAuth 2.1 + PKCE, tokens stored under ~/.dcompose/
+dcompose auth slack                # opens browser, OAuth 2.1 + PKCE, tokens stored under ~/.dcompose/
 ```
 
 ## Discovering tools
@@ -52,7 +54,7 @@ declare namespace mcp.pagerduty {
     service_ids?: string[];
     since?: string;
     limit?: number;
-  }): Promise<any>;                        // no outputSchema on this server → any
+  }): Promise<any>; // no outputSchema on this server → any
 }
 ```
 
@@ -70,14 +72,14 @@ each full record landing in context. With dcompose:
 
 ```ts
 // .dcompose/scripts/active-employee-names.ts
-import type { Ctx } from "dcompose";  // resolves once phase 3 writes .dcompose/types/
+import type { Ctx } from "dcompose"; // resolves once phase 3 writes .dcompose/types/
 
 export default async function ({ mcp, pmap }: Ctx) {
   const all = await mcp.hr.list_employees({});
   const active = all.filter((e: any) => e.active);
-  const names = await pmap(active, (e: any) =>
-    mcp.hr.get_employee({ id: e.id }).then((r: any) => r.name),
-    { concurrency: 8 });
+  const names = await pmap(active, (e: any) => mcp.hr.get_employee({ id: e.id }).then((r: any) => r.name), {
+    concurrency: 8,
+  });
   return { count: names.length, names };
 }
 ```
@@ -113,7 +115,7 @@ export default async function ({ mcp, pmap }: Ctx) {
   for (const o of oncalls) byUser.get(o.user.id).policies.push(o.escalation_policy.summary);
 
   const triggered = await mcp.pagerduty.list_incidents({ statuses: ["triggered"] });
-  return [...byUser.values()].map(u => ({
+  return [...byUser.values()].map((u) => ({
     ...u,
     open: triggered.filter((i: any) => u.policies.includes(i.escalation_policy?.summary)).length,
   }));
@@ -140,21 +142,22 @@ The script polls and **returns** only when something needs the agent. Process ex
 notification; Claude Code re-invokes the agent when a background Bash command finishes.
 
 ```ts
-// .dcompose/scripts/watch-teams.ts
+// .dcompose/scripts/watch-slack.ts
 export default async function ({ mcp, input, store, sleep, emit }: Ctx<{ watched: string[]; intervalMs?: number }>) {
   const seen: Record<string, string> = (await store.get("seen")) ?? {};
 
   while (true) {
-    const chats = await mcp.teams.list_chats({});
-    for (const c of chats) {
-      if (seen[c.id] === c.lastMessageId) continue;
+    const channels = await mcp.slack.list_channels({});
+    for (const c of channels) {
+      if (seen[c.id] === c.latest_ts) continue;
       const firstTime = !(c.id in seen);
-      seen[c.id] = c.lastMessageId;
+      seen[c.id] = c.latest_ts;
       await store.set("seen", seen);
 
-      if (firstTime)                       return { kind: "new-chat", chatId: c.id, topic: c.topic, from: c.lastMessageFrom };
-      if (input.watched.includes(c.id))    return { kind: "message",  chatId: c.id, topic: c.topic, preview: c.lastMessagePreview };
-      emit({ kind: "unwatched-activity", chatId: c.id });
+      if (firstTime) return { kind: "new-channel", channelId: c.id, topic: c.name, from: c.latest_user };
+      if (input.watched.includes(c.id))
+        return { kind: "message", channelId: c.id, topic: c.name, preview: c.latest_text };
+      emit({ kind: "unwatched-activity", channelId: c.id });
     }
     await sleep(input.intervalMs ?? 30_000);
   }
@@ -164,12 +167,12 @@ export default async function ({ mcp, input, store, sleep, emit }: Ctx<{ watched
 Agent runs it in the background with no timeout:
 
 ```sh
-dcompose run .dcompose/scripts/watch-teams.ts \
-  --input '{"watched":["19:abc@thread.v2","19:def@thread.v2"]}' \
+dcompose run .dcompose/scripts/watch-slack.ts \
+  --input '{"watched":["C01ABC","C02DEF"]}' \
   --timeout 0 --max-calls 0 --read-only
 ```
 
-When it exits with `{"kind":"new-chat", ...}`, the agent asks the user "watch this one?",
+When it exits with `{"kind":"new-channel", ...}`, the agent asks the user "watch this one?",
 updates the watched list, and relaunches. When it exits with `{"kind":"message", ...}`,
 the agent summarises for the user and relaunches. `--max-calls 0` lifts the call cap because
 a monitor legitimately makes thousands of calls over a day.
@@ -182,9 +185,9 @@ the daemon is not yet available.
 ```ts
 export default async function* ({ mcp, store, sleep }: Ctx<{ watched: string[] }>) {
   while (true) {
-    for (const c of await mcp.teams.list_chats({})) {
+    for (const c of await mcp.slack.list_channels({})) {
       /* same seen/watched logic as above, but: */
-      if (worthReporting) yield { kind: "message", chatId: c.id, preview: c.lastMessagePreview };
+      if (worthReporting) yield { kind: "message", channelId: c.id, preview: c.latest_text };
     }
     await sleep(30_000);
   }
@@ -192,7 +195,7 @@ export default async function* ({ mcp, store, sleep }: Ctx<{ watched: string[] }
 ```
 
 ```sh
-dcompose run scripts/watch-teams.ts --input-file watched.json --timeout 8h --max-calls 0
+dcompose run scripts/watch-slack.ts --input-file watched.json --timeout 8h --max-calls 0
 ```
 
 ## Safety flags in practice
@@ -242,12 +245,16 @@ git log --since=yesterday --format='%H %s' | dcompose run scripts/link-commits-t
 // scripts/link-commits-to-tickets.ts — stdin lines in, enriched NDJSON out
 export default async function ({ mcp, stdin, pmap }: Ctx) {
   const lines = await Array.fromAsync(stdin.lines());
-  return pmap(lines, async (l) => {
-    const [sha, ...rest] = l.split(" ");
-    const key = rest.join(" ").match(/[A-Z]+-\d+/)?.[0];
-    const issue = key ? await mcp.jira.get_issue({ key }) : null;
-    return { sha, key, status: issue?.fields?.status?.name ?? null };
-  }, { concurrency: 4 });
+  return pmap(
+    lines,
+    async (l) => {
+      const [sha, ...rest] = l.split(" ");
+      const key = rest.join(" ").match(/[A-Z]+-\d+/)?.[0];
+      const issue = key ? await mcp.jira.get_issue({ key }) : null;
+      return { sha, key, status: issue?.fields?.status?.name ?? null };
+    },
+    { concurrency: 4 },
+  );
 }
 ```
 
@@ -263,7 +270,7 @@ dcompose call pagerduty.list_incidents '{"statuses":["triggered"]}' \
 dcompose eval 'return (await mcp.pagerduty.list_oncalls({})).map(o => o.user.summary)' -r --jsonl | sort -u
 
 # stdin as the input object
-jq '{watched: [.[] | select(.watch) | .id]}' chats.json | dcompose run scripts/watch-teams.ts --input - --timeout 0
+jq '{watched: [.[] | select(.watch) | .id]}' channels.json | dcompose run scripts/watch-slack.ts --input - --timeout 0
 
 # Branch on exit code in a shell script
 if out=$(dcompose run scripts/check.ts --read-only --max-calls 50); then
@@ -282,7 +289,7 @@ export default async function ({ mcp, sh }: Ctx) {
   const { stdout } = await sh("gh pr list --state merged --limit 20 --json number,mergedAt,title");
   const prs = JSON.parse(stdout);
   const incidents = await mcp.pagerduty.list_incidents({ since: prs.at(-1).mergedAt });
-  return prs.map(p => ({ ...p, incidentsAfter: incidents.filter(i => i.created_at > p.mergedAt).length }));
+  return prs.map((p) => ({ ...p, incidentsAfter: incidents.filter((i) => i.created_at > p.mergedAt).length }));
 }
 ```
 
