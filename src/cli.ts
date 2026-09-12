@@ -132,8 +132,12 @@ program
   .option("--concurrency <n>", "parallel calls for --each (default 5)", int)
   .action((qualified, args, opts) => run((r) => callCommand(r, qualified, args, opts)));
 
-const runs = program.command("runs").description("list past runs (newest first)");
+// The parent carries no options of its own: `list` is the default subcommand, so `runs --json` and
+// `runs show --json` never compete for the same flag.
+const runs = program.command("runs").description("inspect past runs");
 runs
+  .command("list", { isDefault: true })
+  .description("list past runs, newest first")
   .option("--label <name>", "only runs with this label")
   .option("-n, --limit <n>", "how many to show (default 20)", int)
   .option("--json", "machine-readable output")
