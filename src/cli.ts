@@ -14,6 +14,8 @@ import { runsListCommand, runsShowCommand } from "./commands/runs.ts";
 import { daemonLog, daemonRun, daemonStart, daemonStatus, daemonStop, ensureDaemon } from "./commands/daemon.ts";
 import { DaemonClient } from "./daemon/client.ts";
 import { authCommand } from "./commands/auth.ts";
+import { whereCommand } from "./commands/where.ts";
+import { skillCommand } from "./commands/skill.ts";
 import { configHash, findProjectRoot, type Config } from "./config.ts";
 
 const program = new Command()
@@ -104,6 +106,21 @@ program
   .option("--force", "overwrite existing imported entries and SKILL.md")
   .option("--no-skill", "do not write .claude/skills/dcompose/SKILL.md")
   .action(async (opts) => process.exit(await initCommand(process.cwd(), opts)));
+
+program
+  .command("where")
+  .description("print the paths dcompose uses from this directory (root, config, scripts, runs, state, types)")
+  .option("--json", "machine-readable output")
+  .action(async (opts) => process.exit(await whereCommand(opts)));
+
+program
+  .command("skill")
+  .description("write the Claude Code skill files (SKILL.md, patterns.md, pitfalls.md)")
+  .option("--user", "install for every project: ~/.claude/skills/dcompose/")
+  .option("--project", "install into ./.claude/skills/dcompose/ (default)")
+  .option("--dir <path>", "install somewhere else")
+  .option("--force", "overwrite existing files")
+  .action(async (opts) => process.exit(await skillCommand(opts)));
 
 program
   .command("servers")

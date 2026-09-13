@@ -142,6 +142,8 @@ types                            generate .dcompose/types/mcp.d.ts
 check [scripts...]               type-check scripts against the generated types
 runs [show <id|--label>]         inspect past runs
 auth <server>                    OAuth 2.1 sign-in for a remote server (tokens under ~/.dcompose/auth/)
+where                            paths dcompose will use from this directory (root, config, scripts, runs)
+skill [--user|--project]         write the Claude Code skill files (SKILL.md, patterns.md, pitfalls.md)
 daemon start|stop|status|log     warm-connection daemon
 ```
 
@@ -153,7 +155,10 @@ Resolution order, later wins per server name: `~/.dcompose/config.json`, then `.
 
 A directory with no project config still works on the user-level file alone, and its runs,
 state, and generated types go to a per-directory workspace under `~/.dcompose/workspaces/`
-rather than into that directory. `DCOMPOSE_HOME` relocates `~/.dcompose` entirely (config,
+rather than into that directory. This is how to use dcompose inside repos you do not want to
+add files to: put the servers in `~/.dcompose/config.json`, install the skill once per user
+with `dcompose skill --user` (Claude Code reads `~/.claude/skills/` in every session), and run
+`dcompose where` from the repo to see which paths will be used. `DCOMPOSE_HOME` relocates `~/.dcompose` entirely (config,
 OAuth tokens, daemon sockets, workspaces); the test suite uses it for isolation.
 
 ```json

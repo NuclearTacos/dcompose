@@ -155,6 +155,38 @@ describe("cli: --trace, NO_COLOR, check on a directory", () => {
     assert.match(r.stderr, /2 scripts checked/);
     assert.ok(!r.stderr.includes(String.fromCharCode(27) + "["), "expected no ANSI colour codes");
   });
+  test("where reports project mode here and workspace mode in a bare directory", () => {
+    const here = JSON.parse(dc(["where", "--json"]).stdout);
+    assert.equal(here.mode, "project");
+    assert.equal(here.root.toLowerCase(), project.toLowerCase());
+    assert.match(here.scripts, /scripts$/);
+
+    const bare = tmp();
+    const r = spawnSync(process.execPath, [CLI, "where", "--json"], {
+      cwd: bare,
+      encoding: "utf8",
+      env: { ...process.env, DCOMPOSE_NO_DAEMON: "1" },
+      windowsHide: true,
+    });
+    const w = JSON.parse(r.stdout);
+    assert.equal(w.mode, "workspace");
+    assert.ok(
+      !w.root.toLowerCase().startsWith(bare.toLowerCase()),
+      "workspace root must not be inside the bare directory",
+    );
+    assert.ok(w.root.replace(/\\/g, "/").includes("/workspaces/"));
+  });
+  test("skill --dir writes the three files and respects existing ones without --force", () => {
+    const dir = join(tmp(), "skills", "dcompose");
+    const first = dc(["skill", "--dir", dir]);
+    assert.equal(first.status, 0, first.stderr);
+    for (const f of ["SKILL.md", "patterns.md", "pitfalls.md"]) assert.ok(existsSync(join(dir, f)), f);
+    writeFileSync(join(dir, "SKILL.md"), "custom");
+    dc(["skill", "--dir", dir]);
+    assert.equal(readFileSync(join(dir, "SKILL.md"), "utf8"), "custom");
+    dc(["skill", "--dir", dir, "--force"]);
+    assert.match(readFileSync(join(dir, "SKILL.md"), "utf8"), /^---\nname: dcompose/);
+  });
   test("auth refuses stdio servers and reports missing tokens", () => {
     const stdio = dc(["auth", "echo"]);
     assert.equal(stdio.status, 3);

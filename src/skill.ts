@@ -48,11 +48,18 @@ avoid reading data you actually need to reason about.
 
 ## Workflow
 
+0. **Find your paths.** \`dcompose where\` prints the scripts, runs, state, and types locations
+   for this directory. A directory with its own \`dcompose.json\` uses \`./.dcompose/\`; one running
+   on user-level config alone uses a workspace under \`~/.dcompose/workspaces/\` so the directory
+   is never written to. Write scripts to the \`scripts\` path it prints; bare names in \`run\`
+   resolve there.
 1. **See what is available.**
    \`\`\`sh
    dcompose servers                      # names, connection status, tool counts
    dcompose tools <server> --grep <word> # server.tool + one-line description + [read-only]
    \`\`\`
+   Note which tools carry \`[read-only]\`. Servers that annotate nothing (common) make
+   \`--read-only\` refuse everything; use \`--allow\` with explicit tool names for those.
 2. **Read the exact signatures.** \`dcompose types\` writes \`.dcompose/types/mcp.d.ts\`.
    Grep it for the tool name instead of guessing argument names. Input types are exact.
    **Output types are only as good as the server's declared schema**: they often omit fields
@@ -101,7 +108,8 @@ avoid reading data you actually need to reason about.
 - Results over \`--max-output-bytes\` (default 64k) are written to \`.dcompose/runs/<id>.result.json\`
   and stdout gets a small stub pointing at the file, with exit 2. Return less, or read the file.
 
-Pick flags by intent: **read-only report** → \`--read-only --max-calls N\`. **Write action** →
+Pick flags by intent: **read-only report** → \`--read-only --max-calls N\` when the tools carry
+\`[read-only]\`, otherwise \`--allow 'srv.list_*,srv.get_*' --max-calls N\`. **Write action** →
 first \`--dry-run\`, then \`--allow\` naming exactly the write tools, never \`--read-only\`.
 **Monitor** → \`--timeout 0 --max-calls 0 --read-only -q\`.
 

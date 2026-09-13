@@ -9,7 +9,7 @@ import {
   type ServerConfig,
 } from "../config.ts";
 import { EXIT } from "../output.ts";
-import { skillFiles } from "../skill.ts";
+import { skillDir, writeSkillFiles } from "./skill.ts";
 
 export interface InitOptions {
   importClaude?: boolean;
@@ -33,20 +33,9 @@ export async function initCommand(cwd: string, opts: InitOptions): Promise<numbe
   err("created .dcompose/{scripts,types,runs,state}");
 
   if (opts.skill !== false) {
-    const skillDir = join(cwd, ".claude", "skills", "dcompose");
-    mkdirSync(skillDir, { recursive: true });
-    const written: string[] = [];
-    const kept: string[] = [];
-    for (const [file, content] of Object.entries(skillFiles())) {
-      const p = join(skillDir, file);
-      if (!existsSync(p) || opts.force) {
-        writeFileSync(p, content, "utf8");
-        written.push(file);
-      } else {
-        kept.push(file);
-      }
-    }
-    const rel = relative(cwd, skillDir);
+    const dir = skillDir("project", cwd);
+    const { written, kept } = writeSkillFiles(dir, opts.force ?? false);
+    const rel = relative(cwd, dir);
     if (written.length) err(`wrote ${rel}/{${written.join(",")}} (teaches Claude Code the dcompose workflow)`);
     if (kept.length) err(`${rel}/{${kept.join(",")}} already exist, left alone (--force to overwrite)`);
   }
