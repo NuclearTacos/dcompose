@@ -16,6 +16,7 @@ import { DaemonClient } from "./daemon/client.ts";
 import { authCommand } from "./commands/auth.ts";
 import { whereCommand } from "./commands/where.ts";
 import { skillCommand } from "./commands/skill.ts";
+import { importCommand } from "./commands/import.ts";
 import { configHash, findProjectRoot, type Config } from "./config.ts";
 
 const program = new Command()
@@ -121,6 +122,17 @@ program
   .option("--dir <path>", "install somewhere else")
   .option("--force", "overwrite existing files")
   .action(async (opts) => process.exit(await skillCommand(opts)));
+
+program
+  .command("import [names...]")
+  .description(
+    "copy MCP servers from Claude Code config (~/.claude.json, ./.mcp.json) into dcompose config; default target is ~/.dcompose/config.json",
+  )
+  .option("--user", "write to ~/.dcompose/config.json (default; applies everywhere, touches nothing here)")
+  .option("--project", "write to ./dcompose.local.json instead")
+  .option("--force", "overwrite entries that already exist")
+  .option("--list", "show what could be imported and exit")
+  .action(async (names, opts) => process.exit(await importCommand(names, opts)));
 
 program
   .command("servers")

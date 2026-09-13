@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
 - `ctx.paginate(fetchPage, { maxPages, maxItems })`: cursor paging helper.
 - `check <dir>` type-checks every script in a directory; CI now checks `examples/`.
 - `NO_COLOR` or a non-TTY stderr disables colour in `check` diagnostics.
+- `import [names...]`: copy servers from Claude Code's config into the user-level
+  `~/.dcompose/config.json` (default) or `./dcompose.local.json` (`--project`). Replaces
+  running `init --import-claude` inside repos that should not gain dcompose files.
+- `ctx.unwrap(value)`: parse JSON that a server returned inside a string field
+  (PagerDuty's analytics tools do this). `dcompose call` prints a note naming such fields.
+- `where`, `skill --user|--project`: see above.
 - Directories with no project config get a per-directory workspace under
   `~/.dcompose/workspaces/` for runs, state, and types, so running on user-level config alone
   never writes into someone else's repo. `DCOMPOSE_HOME` relocates `~/.dcompose`.
@@ -24,6 +30,16 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - Docs: removed the never-implemented `DCOMPOSE_PROFILE`; closed the npm-imports question,
   since scripts can already import from the project's `node_modules`.
+- `init --import-claude` now adds `dcompose.local.json` and `.dcompose/` to the enclosing
+  repo's `.gitignore` when missing and reports exactly what git will do, instead of claiming
+  the file was gitignored. Found by a real session that wrote an API key into an unignored file.
+
+### Fixed
+- OAuth token refresh never ran for non-interactive connections: the MCP SDK treats a provider
+  without a redirect URL as a client-credentials flow and skips the refresh branch, so stored
+  tokens failed after the first expiry. The provider now always presents the registered
+  redirect URL (or a loopback placeholder), and fails fast with the `dcompose auth` hint when
+  nothing is stored rather than registering a throwaway client.
 
 ### Planned
 - Packs: package servers plus curated scripts for install elsewhere (`pack`, `install`, `doctor`).

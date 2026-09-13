@@ -65,15 +65,21 @@ export class FileOAuthProvider implements OAuthClientProvider {
     return existsSync(tokenPath(server, serverUrl));
   }
 
-  get redirectUrl(): string | undefined {
-    return this.opts.redirectUrl;
+  /**
+   * The SDK treats a provider with no redirectUrl as a client-credentials flow and skips token
+   * refresh entirely. A non-interactive provider must therefore still present a redirect URL: the
+   * one registered during `dcompose auth`, or a loopback placeholder. It is never opened.
+   */
+  get redirectUrl(): string {
+    const registered = (this.data.clientInformation as { redirect_uris?: string[] } | undefined)?.redirect_uris?.[0];
+    return this.opts.redirectUrl ?? registered ?? "http://127.0.0.1/dcompose/callback";
   }
 
   get clientMetadata(): OAuthClientMetadata {
     return {
       client_name: "dcompose",
       client_uri: "https://github.com/NuclearTacos/dcompose",
-      redirect_uris: this.opts.redirectUrl ? [this.opts.redirectUrl] : [],
+      redirect_uris: [this.redirectUrl],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
@@ -98,6 +104,10 @@ export class FileOAuthProvider implements OAuthClientProvider {
   }
 
   clientInformation(): OAuthClientInformationMixed | undefined {
+    // Non-interactive with nothing stored: the SDK would register a throwaway client and then try
+    // to open a browser. Fail fast with the actionable message instead.
+    if (!this.opts.onRedirect && !this.data.clientInformation && !this.data.tokens)
+      throw new NeedsAuthError(this.opts.server);
     return this.data.clientInformation;
   }
 

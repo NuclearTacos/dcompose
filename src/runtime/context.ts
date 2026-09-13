@@ -53,6 +53,8 @@ export interface Ctx<I = any> {
     opts?: PaginateOptions,
   ): Promise<T[]>;
   sleep(ms: number): Promise<void>;
+  /** Parse JSON that a server returned wrapped in a string field, e.g. `{ result: "{...}" }`. */
+  unwrap<T = any>(value: unknown): T;
   /** One NDJSON line on stderr; interim events that are not the return value. */
   emit(event: unknown): void;
   /** Human-readable stderr line. */
@@ -104,6 +106,42 @@ export async function paginate<T, C = unknown>(
     "max-pages",
     `paginate stopped after ${maxPages} pages; pass { maxPages } to raise the limit`,
   );
+}
+
+/**
+ * Some servers wrap JSON in a string field, e.g. `{ result: "{\"total\":24725}" }`. Auto-parse
+ * cannot know that string is JSON. `unwrap` parses any string field (or the value itself) that
+ * looks like JSON, recursively, without touching strings that are just text.
+ */
+export function unwrap<T = any>(value: unknown, depth = 3): T {
+  if (depth <= 0) return value as T;
+  if (typeof value === "string") {
+    const t = value.trim();
+    if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+      try {
+        return unwrap(JSON.parse(t), depth - 1);
+      } catch {
+        return value as T;
+      }
+    }
+    return value as T;
+  }
+  // Descending into objects/arrays is free; only parsing a string consumes depth.
+  if (Array.isArray(value)) return value.map((v) => unwrap(v, depth)) as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = unwrap(v, depth);
+    return out as T;
+  }
+  return value as T;
+}
+
+/** Names of top-level string fields that look like embedded JSON; used for the `call` hint. */
+export function jsonStringFields(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.entries(value)
+    .filter(([, v]) => typeof v === "string" && /^\s*[[{]/.test(v) && unwrap(v, 1) !== v)
+    .map(([k]) => k);
 }
 
 export class GuardrailError extends Error {
@@ -254,6 +292,7 @@ export function buildContext(opts: ContextOptions): Ctx {
     pmap: (items, fn, o) => pmap(items, fn, { concurrency: opts.defaultConcurrency, ...o }),
     paginate,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    unwrap,
     emit: (event) => process.stderr.write(JSON.stringify(event) + "\n"),
     log: (...parts) =>
       process.stderr.write(parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ") + "\n"),

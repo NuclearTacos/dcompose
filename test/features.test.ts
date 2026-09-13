@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { paginate, GuardrailError } from "../src/runtime/context.ts";
+import { paginate, GuardrailError, unwrap, jsonStringFields } from "../src/runtime/context.ts";
 import { FileOAuthProvider, NeedsAuthError, tokenPath } from "../src/auth/provider.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -100,6 +100,91 @@ describe("oauth provider", () => {
     p.reset();
     assert.ok(!existsSync(p.path));
     assert.equal(p.hasTokens, false);
+  });
+});
+
+describe("unwrap", () => {
+  test("parses JSON-in-string fields recursively and leaves text alone", () => {
+    const v = unwrap({ result: '{"total":3,"rows":"[1,2]"}', title: "Sensor change {not json", n: 1 });
+    assert.deepEqual(v, { result: { total: 3, rows: [1, 2] }, title: "Sensor change {not json", n: 1 });
+    assert.deepEqual(unwrap('{"a":1}'), { a: 1 });
+    assert.equal(unwrap("plain"), "plain");
+    assert.deepEqual(unwrap({ ok: true }), { ok: true });
+  });
+  test("jsonStringFields names only fields that are embedded JSON", () => {
+    assert.deepEqual(jsonStringFields({ result: "[1]", note: "hi", other: "{oops" }), ["result"]);
+    assert.deepEqual(jsonStringFields([1, 2]), []);
+    assert.deepEqual(jsonStringFields("x"), []);
+  });
+});
+
+describe("oauth provider: non-interactive refresh path", () => {
+  test("always presents a redirect URL so the SDK reaches the refresh branch", () => {
+    const dir = tmp();
+    const bare = new FileOAuthProvider({ server: "s", serverUrl: "https://x.example/mcp", dir });
+    assert.match(bare.redirectUrl, /^http:\/\/127\.0\.0\.1\//);
+    // After an interactive sign-in stored a registration, the non-interactive provider reuses its redirect URI.
+    const interactive = new FileOAuthProvider({
+      server: "s",
+      serverUrl: "https://x.example/mcp",
+      dir,
+      redirectUrl: "http://127.0.0.1:4242/callback",
+      onRedirect: () => {},
+    });
+    interactive.saveClientInformation({ client_id: "c", redirect_uris: ["http://127.0.0.1:4242/callback"] } as never);
+    interactive.saveTokens({ access_token: "t", token_type: "bearer", refresh_token: "r" });
+    const later = new FileOAuthProvider({ server: "s", serverUrl: "https://x.example/mcp", dir });
+    assert.equal(later.redirectUrl, "http://127.0.0.1:4242/callback");
+    assert.deepEqual(later.clientInformation(), { client_id: "c", redirect_uris: ["http://127.0.0.1:4242/callback"] });
+  });
+  test("with nothing stored, clientInformation() fails fast with NeedsAuthError instead of registering", () => {
+    const p = new FileOAuthProvider({ server: "srv", serverUrl: "https://x.example/mcp", dir: tmp() });
+    assert.throws(
+      () => p.clientInformation(),
+      (e: unknown) => e instanceof NeedsAuthError,
+    );
+  });
+});
+
+describe("cli: import and init gitignore", () => {
+  const run = (args: string[], cwd: string, env: Record<string, string> = {}) =>
+    spawnSync(process.execPath, [CLI, ...args], {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, DCOMPOSE_NO_DAEMON: "1", ...env },
+      timeout: 60_000,
+      windowsHide: true,
+    });
+
+  test("import --list exits 0; importing an unknown name exits 3 and names the known ones", () => {
+    const dir = tmp();
+    assert.equal(run(["import", "--list"], dir).status, 0);
+    const r = run(["import", "definitely-not-a-server-xyz"], dir);
+    assert.equal(r.status, 3);
+    assert.match(r.stderr, /not found in Claude Code config/);
+    assert.ok(!existsSync(join(dir, "dcompose.local.json")), "must not write into the directory");
+  });
+
+  test("init --import-claude inside a git repo adds real ignore rules and reports truthfully", () => {
+    const repo = tmp();
+    spawnSync("git", ["init", "-q"], { cwd: repo, windowsHide: true });
+    writeFileSync(join(repo, ".gitignore"), "node_modules/\n");
+    const r = run(["init", "--import-claude", "--no-skill"], repo);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /added dcompose\.local\.json, \.dcompose\/ to \.gitignore|already gitignored/);
+    const gi = readFileSync(join(repo, ".gitignore"), "utf8");
+    assert.match(gi, /dcompose\.local\.json/);
+    assert.match(gi, /\.dcompose\//);
+    const ignored = spawnSync("git", ["check-ignore", "-q", "dcompose.local.json"], { cwd: repo, windowsHide: true });
+    assert.equal(ignored.status, 0, "dcompose.local.json must actually be ignored");
+    assert.match(r.stderr, /prefer `dcompose import --user`/);
+  });
+
+  test("init outside a git repo says so instead of claiming gitignored", () => {
+    const dir = tmp();
+    const r = run(["init", "--import-claude", "--no-skill"], dir, { GIT_CEILING_DIRECTORIES: dir });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /not a git repo|added .* to \.gitignore|already gitignored/);
   });
 });
 

@@ -34,6 +34,23 @@ Companion files in this folder, read them when relevant:
 - **pitfalls.md**: what has actually gone wrong and how to avoid it. Read it the first time a
   run fails for a reason you did not expect.
 
+## Config, in one breath
+
+Servers come from three files merged in order: \`~/.dcompose/config.json\` (user), then
+\`./dcompose.json\`, then \`./dcompose.local.json\`. Entries use Claude Code's \`mcpServers\` shape;
+\`\${VAR}\` and \`\${VAR:-default}\` expand from the environment. \`dcompose where\` shows which files
+are in effect.
+
+**Need a server Claude Code has but dcompose does not?** Copy it into the user-level config;
+nothing is written to the current directory:
+\`\`\`sh
+dcompose import --list            # what Claude Code has
+dcompose import pagerduty         # → ~/.dcompose/config.json
+\`\`\`
+**Do not run \`dcompose init\` inside a repo you do not own.** It creates \`dcompose.json\`,
+\`.dcompose/\`, and (with \`--import-claude\`) a \`dcompose.local.json\` that carries API keys copied
+from Claude Code's config. \`init\` is for a project that should own its dcompose setup.
+
 ## When to use it (and when not)
 
 Use dcompose when any of these is true:
@@ -90,6 +107,7 @@ avoid reading data you actually need to reason about.
 | \`pmap(items, fn, { concurrency })\` | Bounded fan-out; use this instead of \`Promise.all\` |
 | \`paginate(async (cursor) => ({ items, next }), { maxPages })\` | Cursor paging; returns all items |
 | \`sleep(ms)\` | Polling loops |
+| \`unwrap(value)\` | Parse JSON a server returned inside a string field, e.g. \`{ result: "{...}" }\`. \`dcompose call\` prints a note when a result needs this |
 | \`emit(obj)\` | Interim NDJSON event on stderr (not the return value) |
 | \`log(...)\` | Human-readable stderr |
 | \`store.get/set/delete/all\` | JSON state persisted at \`.dcompose/state/<script>.json\` across runs |
@@ -439,6 +457,29 @@ Do: probe one real call before writing a join, and look at the actual keys.
 \`\`\`sh
 dcompose call pagerduty.list_incidents '{"limit":1}' --read-only | jq '.response[0] | keys'
 \`\`\`
+
+## The result is JSON inside a string
+
+Some servers return \`{ "result": "{\\"total\\":24725,...}" }\`: the payload is a JSON string in a
+field. Auto-parse cannot know that string is JSON, so scripts see text, and the generated type
+for that field honestly says \`string\`. PagerDuty's analytics tools do this.
+
+Do: \`dcompose call\` prints a note naming the field when this happens. In the script, wrap the
+call: \`const m = unwrap(await mcp.pagerduty.get_incident_metrics_all(win))\` and then read
+\`m.result.total_incident_count\`. \`unwrap\` recurses, leaves ordinary text alone, and is a
+no-op on values that were already objects. Probe the unwrapped shape once before writing the
+join; the by-service variant carries \`response: [...]\`, not \`data\`.
+
+## \`dcompose init\` in a repo you do not own
+
+\`init\` creates \`dcompose.json\` and \`.dcompose/\` in the current directory, and
+\`--import-claude\` writes \`dcompose.local.json\` with API keys copied from Claude Code's config.
+In a shared repo that is a secret on disk and untracked files in someone else's tree. \`init\` now
+adds the ignore rules to the repo's \`.gitignore\` itself and reports exactly what git will do, but
+the right move is not to run it there at all.
+
+Do: \`dcompose import <server>\` (user-level config, nothing written here) and \`dcompose where\`
+to find the workspace paths. Use \`init\` only in a project that should own its dcompose setup.
 
 ## List tools cap page size and hide it
 

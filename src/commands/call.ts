@@ -3,6 +3,7 @@ import type { Registry, Server } from "../client.ts";
 import { ToolError } from "../result.ts";
 import { emitResult, EXIT, type OutputOptions } from "../output.ts";
 import { pmap } from "../runtime/pmap.ts";
+import { jsonStringFields } from "../runtime/context.ts";
 
 export interface CallOptions extends OutputOptions {
   rawOutput?: boolean;
@@ -87,6 +88,14 @@ export async function callCommand(
   try {
     const value = await server.callTool(tool, args, { raw: opts.raw, timeoutMs: opts.timeout });
     emitResult(value, { ...opts, raw: opts.rawOutput });
+    // Servers sometimes return JSON wrapped in a string field. Say so, since scripts written against
+    // the generated types will otherwise treat it as text.
+    const wrapped = opts.raw ? [] : jsonStringFields(value);
+    if (wrapped.length) {
+      process.stderr.write(
+        `note: field${wrapped.length > 1 ? "s" : ""} ${wrapped.map((k) => `"${k}"`).join(", ")} contain${wrapped.length > 1 ? "" : "s"} JSON as a string; in scripts use unwrap(result) to parse it.\n`,
+      );
+    }
     return EXIT.OK;
   } catch (e) {
     if (e instanceof ToolError) {

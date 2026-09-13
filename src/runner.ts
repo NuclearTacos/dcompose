@@ -190,7 +190,21 @@ export function resolveScript(script: string, projectRoot: string): string {
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...a: string[]
 ) => (...args: unknown[]) => Promise<unknown>;
-const CTX_KEYS = ["mcp", "call", "input", "stdin", "pmap", "paginate", "sleep", "emit", "log", "runId", "store", "sh"];
+const CTX_KEYS = [
+  "mcp",
+  "call",
+  "input",
+  "stdin",
+  "pmap",
+  "paginate",
+  "sleep",
+  "unwrap",
+  "emit",
+  "log",
+  "runId",
+  "store",
+  "sh",
+];
 
 /** `dcompose eval`: try as a single expression first, then as a function body. */
 function compileInline(code: string): ScriptFn {

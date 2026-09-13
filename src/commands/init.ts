@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join, relative } from "node:path";
 import {
   CONFIG_FILE,
@@ -66,7 +67,19 @@ export async function initCommand(cwd: string, opts: InitOptions): Promise<numbe
     for (const name of kept) err(`  kept existing ${name}  (use --force to overwrite)`);
     for (const s of skipped) err(`  skipped ${s.name}: ${s.reason}`);
     if (added.length + kept.length === 0) err("  nothing found in ~/.claude.json or ./.mcp.json");
-    err(`wrote ${LOCAL_CONFIG_FILE} (gitignored; may contain secrets)`);
+
+    // Imported env blocks routinely hold API keys. Say exactly what git will do with the file,
+    // and make it true: add ignore rules to this repo's .gitignore when they are missing.
+    const ignore = ensureGitignore(cwd, [LOCAL_CONFIG_FILE, ".dcompose/"]);
+    if (ignore.kind === "not-a-repo")
+      err(`wrote ${LOCAL_CONFIG_FILE} (may contain secrets; this directory is not a git repo)`);
+    else if (ignore.added.length)
+      err(`wrote ${LOCAL_CONFIG_FILE} (may contain secrets); added ${ignore.added.join(", ")} to .gitignore`);
+    else err(`wrote ${LOCAL_CONFIG_FILE} (may contain secrets; already gitignored)`);
+    if (ignore.kind === "repo")
+      err(
+        "tip: to use these servers from repos you do not own without adding files to them, prefer `dcompose import --user`.",
+      );
     err("note: claude.ai-hosted connectors are not importable; their credentials live on Anthropic's servers.");
   }
 
@@ -75,4 +88,31 @@ export async function initCommand(cwd: string, opts: InitOptions): Promise<numbe
 
 function describe(sc: ServerConfig): string {
   return isStdio(sc) ? `stdio: ${sc.command} ${sc.args.join(" ")}`.trim() : `${sc.type}: ${sc.url}`;
+}
+
+/**
+ * Make sure `patterns` are ignored by the git repo containing `cwd`. Appends a commented block to
+ * the repo root's .gitignore when any pattern is missing. Returns what was added.
+ */
+export function ensureGitignore(
+  cwd: string,
+  patterns: string[],
+): { kind: "repo" | "not-a-repo"; added: string[]; path?: string } {
+  const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", windowsHide: true });
+  if (top.status !== 0) return { kind: "not-a-repo", added: [] };
+  const root = top.stdout.trim();
+  const path = join(root, ".gitignore");
+  const missing = patterns.filter((p) => {
+    const r = spawnSync("git", ["check-ignore", "-q", p.replace(/\/$/, "/x")], {
+      cwd,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    return r.status !== 0;
+  });
+  if (missing.length === 0) return { kind: "repo", added: [], path };
+  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const block = `${existing.endsWith("\n") || existing === "" ? "" : "\n"}\n# dcompose: machine-local MCP config (may hold imported secrets) and run traces\n${missing.join("\n")}\n`;
+  appendFileSync(path, block, "utf8");
+  return { kind: "repo", added: missing, path };
 }
