@@ -287,8 +287,11 @@ describe("cli: --trace, NO_COLOR, check on a directory", () => {
     });
 
   before(() => {
-    project = tmp();
-    mkdirSync(join(project, "scripts"));
+    // The uppercase segment is deliberate: `check` used to lowercase the paths it handed to
+    // TypeScript, which on a case-sensitive filesystem compiles nothing and still reports "ok".
+    // With a mixed-case mkdtemp name this test passed or failed by luck.
+    project = join(tmp(), "Project");
+    mkdirSync(join(project, "scripts"), { recursive: true });
     writeFileSync(
       join(project, "dcompose.json"),
       JSON.stringify({ mcpServers: { echo: { command: process.execPath, args: [FIXTURE] } } }),
