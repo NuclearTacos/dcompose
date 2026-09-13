@@ -41,6 +41,9 @@ All notable changes to this project are documented here. The format follows
   the file was gitignored. Found by a real session that wrote an API key into an unignored file.
 
 ### Fixed
+- Running dcompose from inside a workspace or project `.dcompose/` tree (e.g. its scripts folder)
+  no longer computes a second, nested workspace; any ancestor containing `.dcompose/` is the root.
+  A real session hit "script not found" this way.
 - OAuth token refresh never ran for non-interactive connections: the MCP SDK treats a provider
   without a redirect URL as a client-credentials flow and skips the refresh branch, so stored
   tokens failed after the first expiry. The provider now always presents the registered

@@ -209,10 +209,29 @@ export function findProjectRoot(cwd = process.cwd()): string {
   let dir = resolve(cwd);
   while (true) {
     if (existsSync(join(dir, CONFIG_FILE)) || existsSync(join(dir, LOCAL_CONFIG_FILE))) return dir;
+    // Already inside a dcompose root (a project's `.dcompose/` or a home workspace): running from
+    // its scripts/ folder must not spawn a second, nested workspace.
+    if (isDcomposeRoot(join(dir, ".dcompose"))) return dir;
     const parent = dirname(dir);
     if (parent === dir) return homeWorkspace(cwd);
     dir = parent;
   }
+}
+
+/**
+ * A `.dcompose` folder marks a root only when it looks like one (has `scripts/` or `runs/`) and is
+ * not dcompose's own home. The user's home directory has a `.dcompose` child too (config.json,
+ * auth/, workspaces/), and treating that as a root would send every unconfigured directory's runs
+ * into ~/.dcompose/runs.
+ */
+function isDcomposeRoot(marker: string): boolean {
+  if (!existsSync(marker)) return false;
+  if (samePath(marker, dcomposeHome()) || samePath(marker, join(homedir(), ".dcompose"))) return false;
+  return existsSync(join(marker, "scripts")) || existsSync(join(marker, "runs"));
+}
+
+function samePath(a: string, b: string): boolean {
+  return resolve(a).replace(/\\/g, "/").toLowerCase() === resolve(b).replace(/\\/g, "/").toLowerCase();
 }
 
 /** ~/.dcompose/workspaces/<short hash of cwd>; created on demand. */

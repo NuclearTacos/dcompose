@@ -127,6 +127,25 @@ describe("config", () => {
     assert.match(ws.replace(/\\/g, "/"), /\/workspaces\/[0-9a-f]{12}$/);
     assert.ok(ws.replace(/\\/g, "/").startsWith(process.env.DCOMPOSE_HOME!.replace(/\\/g, "/")));
     assert.equal(findProjectRoot(lonely), ws, "stable for the same directory");
+    // Running from inside that workspace (e.g. its scripts folder) must resolve to the same
+    // workspace, not spawn a nested one. A real session hit "script not found" this way.
+    const scripts = join(ws, ".dcompose", "scripts");
+    mkdirSync(scripts, { recursive: true });
+    assert.equal(findProjectRoot(scripts), ws);
+    // But dcompose's own home (which has a `.dcompose`-named parent when it *is* ~/.dcompose) is not a root:
+    // a directory whose only `.dcompose` child is dcompose's home still gets a workspace.
+    const fakeHomeParent = tmp();
+    const fakeHome = join(fakeHomeParent, ".dcompose");
+    mkdirSync(fakeHome, { recursive: true });
+    const prev = process.env.DCOMPOSE_HOME;
+    process.env.DCOMPOSE_HOME = fakeHome;
+    try {
+      const r = findProjectRoot(fakeHomeParent);
+      assert.notEqual(r, fakeHomeParent);
+      assert.ok(r.replace(/\\/g, "/").includes("/workspaces/"));
+    } finally {
+      process.env.DCOMPOSE_HOME = prev;
+    }
   });
 });
 
