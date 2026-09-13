@@ -136,6 +136,9 @@ avoid reading data you actually need to reason about.
 - \`--max-calls 50\`, \`--timeout 2m\` bound the run. Defaults come from dcompose.json.
 - \`--dry-run\` logs every call it would make and executes none. Use before any write.
 - \`--trace\` streams each tool call to stderr as it happens; useful on long or stuck runs.
+- \`--isolate\` runs the script in a locked-down child process: no file writes, no shell, no
+  network, no access to server credentials. MCP calls still go through the flags above. Prefer it
+  for any script that does not need to read project files.
 - Results over \`--max-output-bytes\` (default 64k) are written to \`.dcompose/runs/<id>.result.json\`
   and stdout gets a small stub pointing at the file, with exit 2. Return less, or read the file.
 

@@ -272,6 +272,8 @@ const runFlags = (c: Command) =>
     .option("--read-only", "refuse tools not marked readOnlyHint")
     .option("--dry-run", "log calls, execute none, return null from each")
     .option("--allow-exec", "let the script run shell commands via ctx.sh()")
+    .option("--isolate", "run the script in a locked-down child process; MCP calls are proxied (default from config)")
+    .option("--no-isolate", "run in-process even if the config default is isolate")
     .option("--trace", "stream each tool call to stderr as NDJSON while running (always written to the run file)")
     .option("--state <name>", "store name under .dcompose/state/ (default: script name)")
     .option("-q, --quiet", "suppress the run summary on stderr")

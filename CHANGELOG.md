@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `--isolate` on `run` and `eval`, and `defaults.isolate` in config: run the script in a child
+  process under Node's permission model. The child cannot write files, spawn processes, or see the
+  parent's environment or server credentials; `mcp.*`, `call`, and `store` are proxied to the
+  parent, where the existing guardrails and trace apply. `sh()` is refused under isolation.
+  Network is denied on Node builds that support `--allow-net`; the run header notes when it is not.
 - DESIGN.md roadmap phases 8 to 13: script isolation, npm publishing, import from more
   clients, call shorthand, record and replay, keystore credential storage.
 - `dcompose auth <server>`: OAuth 2.1 sign-in for remote servers (PKCE and dynamic client

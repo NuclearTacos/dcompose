@@ -1,8 +1,9 @@
-import { existsSync, writeFileSync } from "node:fs";
-import { basename, extname, join, resolve, isAbsolute } from "node:path";
-import { pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
+import { basename, extname, join } from "node:path";
 import type { Registry } from "./client.ts";
-import { buildContext, GuardrailError, type Ctx } from "./runtime/context.ts";
+import { buildContext, GuardrailError } from "./runtime/context.ts";
+import { netRestricted, startIsolated, type IsolatedRun } from "./runtime/isolate.ts";
+import { compileInline, isAsyncIterable, loadModule, resolveScript, type ScriptFn } from "./runtime/load.ts";
 import { openStore } from "./runtime/store.ts";
 import { RunTrace, byteLength, fmtBytes, fmtMs, type RunSummary } from "./runtime/trace.ts";
 import { runId as makeRunId } from "./runtime/ulid.ts";
@@ -34,6 +35,8 @@ export interface RunOptions {
   output?: OutputOptions;
   /** Stream each call record to stderr as NDJSON while the script runs. */
   trace?: boolean;
+  /** Run the script in a child process under Node's permission model; MCP calls are proxied back. */
+  isolate?: boolean;
 }
 
 export interface RunOutcome {
@@ -43,12 +46,6 @@ export interface RunOutcome {
   summary: RunSummary;
   tracePath: string;
   streamed: number;
-}
-
-type ScriptFn = (ctx: Ctx) => Promise<unknown> | unknown | AsyncIterable<unknown>;
-
-function isAsyncIterable(v: unknown): v is AsyncIterable<unknown> {
-  return !!v && typeof (v as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function";
 }
 
 export async function runScript(opts: RunOptions): Promise<RunOutcome> {
@@ -72,8 +69,10 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
   if (!opts.quiet) {
     // Echo the resolved script path: bare names resolve under a workspace dir nobody can guess.
     const where = opts.script ? ` · script ${safeResolve(opts.script, opts.projectRoot)}` : "";
-    process.stderr.write(`[dcompose] run ${id}${opts.label ? ` (${opts.label})` : ""}${where}\n`);
+    const iso = opts.isolate ? (netRestricted() ? " · isolated" : " · isolated (network open on this Node)") : "";
+    process.stderr.write(`[dcompose] run ${id}${opts.label ? ` (${opts.label})` : ""}${where}${iso}\n`);
   }
+  if (opts.isolate && opts.allowExec) process.stderr.write("[dcompose] --allow-exec is ignored under --isolate\n");
 
   const stateName = opts.stateName ?? (opts.script ? basename(opts.script, extname(opts.script)) : "_eval");
   const ctx = buildContext({
@@ -87,21 +86,35 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
     readOnly: opts.readOnly,
     dryRun: opts.dryRun,
     store: openStore(join(opts.projectRoot, ".dcompose", "state"), stateName),
-    allowExec: opts.allowExec,
+    allowExec: opts.allowExec && !opts.isolate,
   });
 
   let exitCode: number = EXIT.OK;
+  let isolated: IsolatedRun | undefined;
   let value: unknown;
   let reason: string | undefined;
   let outputBytes = 0;
   let streamed = 0;
 
   try {
-    const fn = opts.code !== undefined ? compileInline(opts.code) : await loadScript(opts.script!, opts.projectRoot);
-    const result = await withTimeout(
-      Promise.resolve().then(() => fn(ctx)),
-      opts.timeoutMs,
-    );
+    let result: unknown;
+    if (opts.isolate) {
+      isolated = startIsolated({
+        ctx,
+        script: opts.script ? resolveScript(opts.script, opts.projectRoot) : undefined,
+        code: opts.code,
+        projectRoot: opts.projectRoot,
+        servers: opts.registry.names(),
+        concurrency: opts.concurrency,
+      });
+      result = await withTimeout(isolated.result, opts.timeoutMs);
+    } else {
+      const fn = opts.code !== undefined ? compileInline(opts.code) : await loadScript(opts.script!, opts.projectRoot);
+      result = await withTimeout(
+        Promise.resolve().then(() => fn(ctx)),
+        opts.timeoutMs,
+      );
+    }
 
     if (isAsyncIterable(result)) {
       // Streaming script: each yielded item is one NDJSON line on stdout, flushed as it arrives.
@@ -145,6 +158,8 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
       reason = "script-error";
     }
     process.stderr.write(`dcompose: ${formatError(e)}\n`);
+  } finally {
+    isolated?.kill();
   }
 
   const summary = trace.finish({ exitCode, outputBytes, reason });
@@ -172,55 +187,11 @@ export function makeAllow(allow?: string[], deny?: string[]): ((q: string) => bo
   };
 }
 
-async function loadScript(script: string, projectRoot: string): Promise<ScriptFn> {
-  const path = resolveScript(script, projectRoot);
-  const mod = (await import(pathToFileURL(path).href)) as Record<string, unknown>;
-  const fn = mod.default ?? mod.run ?? mod.main;
-  if (typeof fn !== "function") {
-    throw new Error(`${script}: expected \`export default async function (ctx) { ... }\` (or a named \`run\` export)`);
-  }
-  return fn as ScriptFn;
+function loadScript(script: string, projectRoot: string): Promise<ScriptFn> {
+  return loadModule(resolveScript(script, projectRoot), script);
 }
 
-/** Accepts a path, or a bare name resolved under .dcompose/scripts/ with .ts/.js/.mjs. */
-export function resolveScript(script: string, projectRoot: string): string {
-  const direct = isAbsolute(script) ? script : resolve(process.cwd(), script);
-  if (existsSync(direct)) return direct;
-  const base = join(projectRoot, ".dcompose", "scripts", script);
-  for (const p of [base, `${base}.ts`, `${base}.js`, `${base}.mjs`]) if (existsSync(p)) return p;
-  throw new Error(`script not found: ${script} (looked in cwd and ${join(projectRoot, ".dcompose", "scripts")})`);
-}
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
-  ...a: string[]
-) => (...args: unknown[]) => Promise<unknown>;
-const CTX_KEYS = [
-  "mcp",
-  "call",
-  "input",
-  "stdin",
-  "pmap",
-  "paginate",
-  "sleep",
-  "unwrap",
-  "emit",
-  "log",
-  "runId",
-  "store",
-  "sh",
-];
-
-/** `dcompose eval`: try as a single expression first, then as a function body. */
-function compileInline(code: string): ScriptFn {
-  const params = `{ ${CTX_KEYS.join(", ")} }`;
-  let fn: (...args: unknown[]) => Promise<unknown>;
-  try {
-    fn = new AsyncFunction(params, `return (${code}\n);`);
-  } catch {
-    fn = new AsyncFunction(params, code);
-  }
-  return (ctx) => fn(ctx);
-}
+export { resolveScript };
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   if (ms <= 0) return p;

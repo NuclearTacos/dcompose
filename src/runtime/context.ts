@@ -257,28 +257,10 @@ export function buildContext(opts: ContextOptions): Ctx {
     }
   }
 
-  const serverProxy = (server: string, raw: boolean): ServerProxy =>
-    new Proxy({} as ServerProxy, {
-      get(_t, prop) {
-        if (typeof prop !== "string") return undefined;
-        if (prop === "then") return undefined; // not a thenable
-        if (prop === "raw" && !raw) return serverProxy(server, true);
-        return (args?: Record<string, unknown>) => invoke(server, prop, args, raw);
-      },
-      has: () => true,
-    });
-
-  const serverCache = new Map<string, ServerProxy>();
-  const mcp = new Proxy({} as McpProxy, {
-    get(_t, prop) {
-      if (typeof prop !== "string" || prop === "then") return undefined;
-      registry.get(prop); // throws with the known-server list if misspelled
-      let p = serverCache.get(prop);
-      if (!p) serverCache.set(prop, (p = serverProxy(prop, false)));
-      return p;
-    },
-    ownKeys: () => registry.names(),
-    getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+  const mcp = makeMcpProxy({
+    names: () => registry.names(),
+    assertServer: (name) => void registry.get(name), // throws with the known-server list if misspelled
+    invoke,
   });
 
   return {
@@ -305,7 +287,41 @@ export function buildContext(opts: ContextOptions): Ctx {
   };
 }
 
-function makeStdin(): StdinHelper {
+export interface McpProxyOptions {
+  names(): string[];
+  /** Throw if the server is unknown; called on every `mcp.<server>` access. */
+  assertServer(name: string): void;
+  invoke(server: string, tool: string, args: Record<string, unknown> | undefined, raw: boolean): Promise<unknown>;
+}
+
+/** The `mcp.server.tool()` proxy tree. Shared by the in-process context and the `--isolate` child. */
+export function makeMcpProxy(o: McpProxyOptions): McpProxy {
+  const serverProxy = (server: string, raw: boolean): ServerProxy =>
+    new Proxy({} as ServerProxy, {
+      get(_t, prop) {
+        if (typeof prop !== "string") return undefined;
+        if (prop === "then") return undefined; // not a thenable
+        if (prop === "raw" && !raw) return serverProxy(server, true);
+        return (args?: Record<string, unknown>) => o.invoke(server, prop, args, raw);
+      },
+      has: () => true,
+    });
+
+  const serverCache = new Map<string, ServerProxy>();
+  return new Proxy({} as McpProxy, {
+    get(_t, prop) {
+      if (typeof prop !== "string" || prop === "then") return undefined;
+      o.assertServer(prop);
+      let p = serverCache.get(prop);
+      if (!p) serverCache.set(prop, (p = serverProxy(prop, false)));
+      return p;
+    },
+    ownKeys: () => o.names(),
+    getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+  });
+}
+
+export function makeStdin(): StdinHelper {
   const piped = !process.stdin.isTTY;
   let cached: string | null = null;
   const text = async (): Promise<string> => {

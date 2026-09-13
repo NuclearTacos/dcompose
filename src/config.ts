@@ -41,6 +41,8 @@ export const Config = z.object({
       timeout: z.string().default("5m"),
       concurrency: z.number().int().positive().default(5),
       connectTimeoutMs: z.number().int().positive().default(30_000),
+      /* Run scripts in a child process under Node's permission model unless --no-isolate is passed. */
+      isolate: z.boolean().default(false),
     })
     .prefault({}),
 });

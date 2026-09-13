@@ -3,8 +3,8 @@
 ## Threat model, plainly
 
 dcompose runs code that a language model wrote, against MCP servers that hold real credentials.
-It is a local developer tool for an agent that already has a shell. Its guardrails **bound** a
-run; they do **not** sandbox it.
+It is a local developer tool for an agent that already has a shell. By default its guardrails
+**bound** a run; they do **not** sandbox it. `--isolate` adds a sandbox; see below.
 
 What the guardrails do:
 
@@ -17,10 +17,38 @@ What the guardrails do:
 
 What they do not do:
 
-- A script runs as your user with Node's full standard library. It can read and write files,
-  open sockets, and import packages. Nothing about `--read-only` restricts that; it only
-  restricts MCP tool calls. If you need isolation, run dcompose inside a container or VM.
+- Without `--isolate`, a script runs as your user with Node's full standard library. It can read
+  and write files, open sockets, and import packages. Nothing about `--read-only` restricts that;
+  it only restricts MCP tool calls.
 - `dcompose eval` compiles the argument as a function body. Do not pass untrusted strings to it.
+
+## `--isolate`
+
+`dcompose run --isolate` (or `"defaults": { "isolate": true }` in config) runs the script in a
+child process started with Node's permission model. The parent process keeps the MCP connections,
+the server `env` blocks, the OAuth tokens, the trace, and every guardrail; the child receives a
+proxy context and forwards `mcp.*`, `call`, and `store` operations to the parent over IPC. Each
+forwarded call goes through the same `--read-only`, `--allow`, `--max-calls`, and `--dry-run`
+checks as an in-process run, so the script cannot bypass them from inside the child.
+
+What the child cannot do:
+
+- Read files outside its allowance: the script's own directory, the project's `node_modules`, and
+  dcompose's install directory. It cannot write anywhere; `store` writes happen in the parent.
+- Spawn processes, start worker threads, load native addons, or use WASI. `sh()` throws a
+  guardrail error regardless of `--allow-exec`.
+- See the parent's environment. The child gets `PATH`, temp-directory, and terminal variables
+  only, plus `DCOMPOSE_ISOLATED=1` and `DCOMPOSE_RUN_ID`.
+- Open sockets, on Node builds that restrict network under `--permission` (those that accept
+  `--allow-net`). On Node 22 and 24 the permission model does not cover network access, and the
+  run header says `isolated (network open on this Node)` so this is not silently assumed.
+
+What it still is not:
+
+- A boundary against Node itself. The permission model is a process-level policy, not a VM. If
+  the threat is a hostile script rather than a careless one, run dcompose inside a container.
+- On by default. Existing scripts that read project files or import from outside `node_modules`
+  need `--input-file` or restructuring before a project flips `defaults.isolate`.
 
 ## Credentials
 

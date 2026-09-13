@@ -133,6 +133,10 @@ dcompose servers
 - **Guardrails**: `--read-only` (from MCP annotations), `--allow` / `--deny` globs,
   `--max-calls`, `--timeout`, `--max-output-bytes`, `--dry-run`, `--allow-exec`. A guardrail
   hit exits 2; a script error exits 1; a config error exits 3. Agents branch on that.
+- **Isolation**: `--isolate` runs the script in a child process under Node's permission model.
+  No filesystem writes, no process spawning, no access to the parent's environment or the
+  servers' credentials; MCP calls are proxied back through the parent's guardrails. Opt in per
+  run or with `"defaults": { "isolate": true }`.
 - **Traces**: every run writes an NDJSON file with one line per tool call. `dcompose runs show`
   renders it; `--trace` streams the same records to stderr live.
 - **Daemon**: `dcompose daemon start` keeps MCP connections warm per project. `tools` against a
@@ -195,7 +199,8 @@ OAuth tokens, daemon sockets, workspaces); the test suite uses it for isolation.
   leave Anthropic.
 - Output types are only as good as the server's declared `outputSchema`. Undeclared fields
   type as `any` rather than erroring, and the SKILL.md tells the agent to probe one call first.
-- Guardrails bound a run; they do not sandbox it. See [SECURITY.md](SECURITY.md).
+- Guardrails bound a run; they do not sandbox it unless you pass `--isolate`, and even then
+  network access is only restricted on Node builds that support it. See [SECURITY.md](SECURITY.md).
 
 ## Project
 

@@ -243,16 +243,19 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    localhost; remote exposure is a deliberate step that requires its own auth. Solves the
    localhost-only server problem (DataGrip) by gatewaying from the machine that can reach it.
 
-8. **Script isolation.** Today a script runs in the dcompose process as the user, with Node's
-   full standard library and, in memory, every server's credentials. Guardrails bound MCP calls
-   and nothing else. Add an opt-in `--isolate` that runs the script in a child process with
-   Node's permission model (`--permission`, no filesystem or network by default, read access to
-   the script directory and `.dcompose/types/`) and hands it `ctx.mcp` over an RPC channel to
-   the parent. The parent keeps the MCP clients, the server `env` blocks, and the OAuth tokens;
-   the child never sees them. `ctx.sh()` is refused under `--isolate` regardless of
-   `--allow-exec`. Config `defaults.isolate: true` makes it the project default, and the pack
-   manifest can require it per script. Update SECURITY.md when this lands so "bound, not
-   sandboxed" describes only the default mode.
+8. **Script isolation.** ✅ Done 2026-09-13. Without it a script runs in the dcompose process
+   as the user, with Node's full standard library and, in memory, every server's credentials.
+   `--isolate` (or `defaults.isolate: true`) spawns the script in a child under `node
+--permission` with read access to the script's directory, the project's `node_modules`, and
+   dcompose itself; no writes, no child processes, no workers, no addons, and a scrubbed
+   environment. The child gets a proxy `Ctx`: `mcp.*`, `call`, and `store` are IPC requests to
+   the parent, which runs the real guardrails and the trace on each one. `pmap`, `paginate`,
+   `sleep`, `unwrap`, `emit`, and `log` run locally. Async-generator scripts stream items back
+   over the same channel. `sh()` throws `exec-denied` regardless of `--allow-exec`. `--timeout`
+   kills the child, which also interrupts busy loops that an in-process run cannot. Network is
+   denied only where the Node build supports it (`process.allowedNodeEnvironmentFlags` has
+   `--allow-net`); the run header says so otherwise. Deferred: an `--isolate-read <path>` escape
+   hatch, and the pack manifest requiring isolation per script (phase 6).
 9. **Publish.** `npm install -g dcompose` and `npx dcompose` from the npm registry, replacing
    clone-and-link. Prerequisites: reserve the name or pick a scope, `prepublishOnly` running
    `npm run ci`, the SKILL.md and `patterns.md`/`pitfalls.md` shipped in the package, and the

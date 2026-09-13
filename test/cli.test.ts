@@ -255,6 +255,137 @@ describe("run / eval", () => {
   });
 });
 
+describe("isolate", () => {
+  const iso = (args: string[], opts: Parameters<typeof dc>[1] = {}) => dc([...args, "--isolate"], opts);
+
+  test("script runs in the child and MCP calls are proxied through the parent's guardrails", () => {
+    const name = script(
+      "iso-fanout",
+      `export default async function ({ mcp, pmap }) {
+        const items = await mcp.echo.list({ n: 6 });
+        const active = items.filter((i) => i.active);
+        return pmap(active, async (i) => (await mcp.echo.echo({ value: i.id })).value, { concurrency: 2 });
+      }`,
+    );
+    const r = iso(["run", name]);
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(r.json(), ["item-0", "item-2", "item-4"]);
+    assert.match(r.err, /· isolated/);
+    assert.match(r.err, /echo\.list\s+1 call/);
+    assert.match(r.err, /echo\.echo\s+3 calls/);
+  });
+
+  test("the child cannot read files outside its allowance, spawn processes, or see the parent's env", () => {
+    const probe = script(
+      "iso-probe",
+      `import { readFileSync } from "node:fs";
+      export default async function ({ input }) {
+        const out = {};
+        try { readFileSync(input.file, "utf8"); out.fs = "allowed"; } catch (e) { out.fs = e.code; }
+        try { const cp = await import("node:child_process"); cp.execSync("echo hi"); out.exec = "allowed"; } catch (e) { out.exec = e.code; }
+        out.secret = process.env.DCOMPOSE_TEST_SECRET ?? null;
+        out.isolated = process.env.DCOMPOSE_ISOLATED ?? null;
+        return out;
+      }`,
+    );
+    const r = iso(["run", probe, "-q", "-i", JSON.stringify({ file: join(project, "dcompose.json") })], {
+      env: { DCOMPOSE_TEST_SECRET: "hunter2" },
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(r.json(), { fs: "ERR_ACCESS_DENIED", exec: "ERR_ACCESS_DENIED", secret: null, isolated: "1" });
+  });
+
+  test("sh() is refused even with --allow-exec", () => {
+    const r = iso(["eval", 'await sh("echo hi")', "--allow-exec"]);
+    assert.equal(r.code, 2);
+    assert.match(r.err, /unavailable under --isolate/);
+    assert.match(r.err, /--allow-exec is ignored/);
+  });
+
+  test("guardrails still exit 2 with the reason, and a timeout kills the child", () => {
+    const budget = iso([
+      "eval",
+      "for (let i=0;i<5;i++) await mcp.echo.add({a:i,b:i}); return 1",
+      "-q",
+      "--max-calls",
+      "2",
+    ]);
+    assert.equal(budget.code, 2);
+    assert.match(budget.err, /call budget exhausted \(2\)/);
+
+    const denied = iso(["eval", "await mcp.echo.add({a:1,b:1})", "-q", "--deny", "echo.add"]);
+    assert.equal(denied.code, 2);
+    assert.match(denied.err, /not in the allow list/);
+
+    const ro = iso(["eval", "await mcp.echo.write_thing({})", "-q", "--read-only"]);
+    assert.equal(ro.code, 2);
+
+    const started = Date.now();
+    const timeout = iso(["eval", "await sleep(10000); return 1", "-q", "--timeout", "300ms"]);
+    assert.equal(timeout.code, 2);
+    assert.match(timeout.err, /exceeded --timeout/);
+    assert.ok(Date.now() - started < 8000, "parent did not wait for the child to finish sleeping");
+  });
+
+  test("tool errors and script errors exit 1 with the message", () => {
+    const tool = iso(["eval", 'await mcp.echo.fail({ message: "nope" })', "-q"]);
+    assert.equal(tool.code, 1);
+    assert.match(tool.err, /nope/);
+
+    const thrown = iso(["eval", 'throw new Error("boom from child")', "-q"]);
+    assert.equal(thrown.code, 1);
+    assert.match(thrown.err, /boom from child/);
+
+    const unknown = iso(["eval", "await mcp.nosuch.tool({})", "-q"]);
+    assert.equal(unknown.code, 1);
+    assert.match(unknown.err, /unknown server "nosuch"/);
+  });
+
+  test("streaming, store, stdin, and console.log-to-stderr all work through the proxy", () => {
+    const gen = script(
+      "iso-stream",
+      `export default async function* ({ mcp, store, stdin }) {
+        const n = (await store.get("n")) ?? 0;
+        await store.set("n", n + 1);
+        console.log("noise on stdout");
+        for (const line of (await stdin.text()).trim().split("\\n")) yield { line, n, sum: (await mcp.echo.add({ a: 1, b: 2 })).sum };
+      }`,
+    );
+    const first = iso(["run", gen, "-q"], { input: "a\nb\n" });
+    assert.equal(first.code, 0, first.err);
+    assert.deepEqual(
+      first.out
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l)),
+      [
+        { line: "a", n: 0, sum: 3 },
+        { line: "b", n: 0, sum: 3 },
+      ],
+    );
+    assert.match(first.err, /noise on stdout/);
+    const second = iso(["run", gen, "-q"], { input: "c\n" });
+    assert.deepEqual(JSON.parse(second.out.trim()), { line: "c", n: 1, sum: 3 });
+  });
+
+  test("config default isolate=true applies, and --no-isolate overrides it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dcompose-iso-"));
+    writeFileSync(
+      join(dir, "dcompose.json"),
+      JSON.stringify({
+        mcpServers: { echo: { command: process.execPath, args: [FIXTURE] } },
+        defaults: { isolate: true, connectTimeoutMs: 20_000 },
+      }),
+    );
+    const on = dc(["eval", "process.env.DCOMPOSE_ISOLATED ?? null", "-q"], { cwd: dir });
+    assert.equal(on.code, 0, on.err);
+    assert.equal(on.json(), "1");
+    const off = dc(["eval", "process.env.DCOMPOSE_ISOLATED ?? null", "-q", "--no-isolate"], { cwd: dir });
+    assert.equal(off.code, 0, off.err);
+    assert.equal(off.json(), null);
+  });
+});
+
 describe("types / check / runs", () => {
   test("types writes a d.ts with the augmentation and is cached by hash", () => {
     const r = dc(["types"]);
