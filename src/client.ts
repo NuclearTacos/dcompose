@@ -6,6 +6,8 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { isStdio, type Config, type ServerConfig } from "./config.ts";
 import { parseResult, ToolError } from "./result.ts";
+import { FileOAuthProvider, NeedsAuthError } from "./auth/provider.ts";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 
 export class ConnectionError extends Error {
   readonly server: string;
@@ -146,17 +148,20 @@ export class Server {
 
     const url = new URL(c.url);
     const requestInit: RequestInit = { headers: c.headers };
-    if (c.type === "sse") return new SSEClientTransport(url, { requestInit });
-    return new StreamableHTTPClientTransport(url, { requestInit });
+    // Non-interactive provider: uses tokens saved by `dcompose auth`, refreshes them, and throws
+    // NeedsAuthError instead of opening a browser when the server demands a fresh sign-in.
+    const authProvider = new FileOAuthProvider({ server: this.name, serverUrl: c.url });
+    if (c.type === "sse") return new SSEClientTransport(url, { requestInit, authProvider });
+    return new StreamableHTTPClientTransport(url, { requestInit, authProvider });
   }
 
   private describeFailure(e: Error): string {
     const cause = (e as { cause?: { message?: string } }).cause?.message;
     const msg = cause ? `${e.message} (${cause})` : (e.message ?? String(e));
     const parts = [msg];
-    if (/401|unauthorized/i.test(msg)) {
+    if (e instanceof NeedsAuthError || e instanceof UnauthorizedError || /401|unauthorized/i.test(msg)) {
       parts.push(
-        "Server requires authentication. OAuth support (`dcompose auth`) lands in a later phase; for now supply a token via `headers`.",
+        `Server requires authentication. Run \`dcompose auth ${this.name}\` to sign in with OAuth, or supply a static token via \`headers\`.`,
       );
     }
     if (isStdio(this.config)) {

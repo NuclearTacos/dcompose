@@ -47,6 +47,11 @@ export interface Ctx<I = any> {
   input: I;
   stdin: StdinHelper;
   pmap<T, R>(items: Iterable<T>, fn: (item: T, index: number) => Promise<R> | R, opts?: PmapOptions): Promise<R[]>;
+  /** Cursor paging: fetcher returns `{ items, next }`; loops until `next` is empty. */
+  paginate<T, C = unknown>(
+    fetchPage: (cursor: C | undefined, page: number) => Promise<PageResult<T, C>>,
+    opts?: PaginateOptions,
+  ): Promise<T[]>;
   sleep(ms: number): Promise<void>;
   /** One NDJSON line on stderr; interim events that are not the return value. */
   emit(event: unknown): void;
@@ -62,6 +67,43 @@ export interface Ctx<I = any> {
    * Counts toward --max-calls and appears in the run trace as `$sh`.
    */
   sh(command: string, opts?: ShOptions): Promise<ShResult>;
+}
+
+/** One page from a `paginate` fetcher. `next` undefined/null ends the loop. */
+export interface PageResult<T, C> {
+  items: T[];
+  next?: C | null;
+}
+
+export interface PaginateOptions {
+  /** Stop after this many pages (default 100). A guard against cursors that never end. */
+  maxPages?: number;
+  /** Stop once this many items have been collected. */
+  maxItems?: number;
+}
+
+/**
+ * Cursor paging without the boilerplate. The fetcher gets the previous page's `next`
+ * (undefined on the first call) and returns items plus the next cursor. Returns all items.
+ */
+export async function paginate<T, C = unknown>(
+  fetchPage: (cursor: C | undefined, page: number) => Promise<PageResult<T, C>>,
+  opts: PaginateOptions = {},
+): Promise<T[]> {
+  const maxPages = opts.maxPages ?? 100;
+  const out: T[] = [];
+  let cursor: C | undefined = undefined;
+  for (let page = 1; page <= maxPages; page++) {
+    const { items, next } = await fetchPage(cursor, page);
+    out.push(...items);
+    if (opts.maxItems !== undefined && out.length >= opts.maxItems) return out.slice(0, opts.maxItems);
+    if (next === undefined || next === null || items.length === 0) return out;
+    cursor = next;
+  }
+  throw new GuardrailError(
+    "max-pages",
+    `paginate stopped after ${maxPages} pages; pass { maxPages } to raise the limit`,
+  );
 }
 
 export class GuardrailError extends Error {
@@ -210,6 +252,7 @@ export function buildContext(opts: ContextOptions): Ctx {
     input: opts.input ?? {},
     stdin: makeStdin(),
     pmap: (items, fn, o) => pmap(items, fn, { concurrency: opts.defaultConcurrency, ...o }),
+    paginate,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     emit: (event) => process.stderr.write(JSON.stringify(event) + "\n"),
     log: (...parts) =>

@@ -13,6 +13,7 @@ import { checkCommand } from "./commands/check.ts";
 import { runsListCommand, runsShowCommand } from "./commands/runs.ts";
 import { daemonLog, daemonRun, daemonStart, daemonStatus, daemonStop, ensureDaemon } from "./commands/daemon.ts";
 import { DaemonClient } from "./daemon/client.ts";
+import { authCommand } from "./commands/auth.ts";
 import { configHash, findProjectRoot, type Config } from "./config.ts";
 
 const program = new Command()
@@ -184,6 +185,18 @@ daemon
   .action(async (opts) => process.exit(await daemonRun(opts.project, opts)));
 
 program
+  .command("auth <server>")
+  .description(
+    "sign in to a remote MCP server with OAuth 2.1 (PKCE + dynamic registration); tokens saved under ~/.dcompose/auth/",
+  )
+  .option("--scope <scope>", "OAuth scope(s) to request")
+  .option("--reset", "discard stored client registration and tokens first")
+  .option("--no-browser", "print the URL instead of opening a browser")
+  .option("--timeout <seconds>", "how long to wait for the browser callback (default 300)", int)
+  .option("--status", "report whether tokens are stored, without signing in")
+  .action((server, opts) => run((r) => authCommand(r, server, opts)));
+
+program
   .command("types")
   .description("generate .dcompose/types/mcp.d.ts so ctx.mcp is strictly typed")
   .option("-s, --server <names...>", "only these servers")
@@ -220,6 +233,7 @@ const runFlags = (c: Command) =>
     .option("--read-only", "refuse tools not marked readOnlyHint")
     .option("--dry-run", "log calls, execute none, return null from each")
     .option("--allow-exec", "let the script run shell commands via ctx.sh()")
+    .option("--trace", "stream each tool call to stderr as NDJSON while running (always written to the run file)")
     .option("--state <name>", "store name under .dcompose/state/ (default: script name)")
     .option("-q, --quiet", "suppress the run summary on stderr")
     .option("--jsonl", "if the result is an array, one JSON line per element")

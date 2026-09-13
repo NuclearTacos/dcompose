@@ -12,6 +12,46 @@ result in its context for the rest of the conversation. A list-then-lookup task 
 records is 300 turns and megabytes of context. dcompose lets the agent write the loop instead,
 run it in one shell command, and get back a few hundred bytes.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Agent (model)
+    participant H as Host (Claude Code)
+    participant S as MCP server
+
+    rect rgb(255, 245, 238)
+    Note over A,S: Native tool calls: N+1 round-trips, every record enters context, every call permission-checked
+    A->>H: list_employees
+    H->>S: call
+    S-->>H: 300 records
+    H-->>A: 300 records (into context)
+    loop for each active employee
+        A->>H: get_employee(id)
+        H->>S: call
+        S-->>H: full record
+        H-->>A: full record (into context)
+    end
+    end
+
+    rect rgb(240, 248, 255)
+    Note over A,S: dcompose: 1 round-trip, 1 permission check, only the answer enters context
+    A->>H: Bash: dcompose run active-names --read-only
+    H->>S: list_employees
+    S-->>H: 300 records (stay in the process)
+    loop pmap, concurrency 8
+        H->>S: get_employee(id)
+        S-->>H: full record (stays in the process)
+    end
+    H-->>A: ["Ada", "Alan", ...] (a few hundred bytes)
+    end
+```
+
+The permission point matters in practice. Claude Code checks each tool call against its
+permission rules, prompts, or auto-mode classifier. Native usage means N checks, one per call.
+A dcompose run is one shell command, so it is checked once. That is faster and less noisy, and
+it is also why the guardrail flags exist: a single approval covers everything the script does,
+so `--read-only`, `--allow`, and `--max-calls` are how you bound it.
+
 ```ts
 // .dcompose/scripts/active-names.ts
 import type { Ctx } from "dcompose";
@@ -71,7 +111,8 @@ dcompose servers
 ## Features
 
 - **Scripts** are plain TypeScript modules. The context provides `mcp.<server>.<tool>()`,
-  `call`, `input`, `stdin`, `pmap` (bounded concurrency), `sleep`, `emit`, `log`, `store`, `sh`.
+  `call`, `input`, `stdin`, `pmap` (bounded concurrency), `paginate` (cursor paging), `sleep`,
+  `emit`, `log`, `store`, `sh`.
 - **Streaming**: export an `async function*` and each `yield` is one NDJSON line on stdout,
   immediately. Good for monitors paired with a tail or a Monitor tool.
 - **State**: `ctx.store` is a JSON key-value file per script, so a poller remembers what it has
@@ -80,7 +121,7 @@ dcompose servers
   `--max-calls`, `--timeout`, `--max-output-bytes`, `--dry-run`, `--allow-exec`. A guardrail
   hit exits 2; a script error exits 1; a config error exits 3. Agents branch on that.
 - **Traces**: every run writes an NDJSON file with one line per tool call. `dcompose runs show`
-  renders it.
+  renders it; `--trace` streams the same records to stderr live.
 - **Daemon**: `dcompose daemon start` keeps MCP connections warm per project. `tools` against a
   `uvx` server went from 3.0 s to 0.4 s. Falls back to direct connections when absent.
 - **Shell-native**: `dcompose eval '<code>'` for one-liners, `dcompose call server.tool --each`
@@ -100,6 +141,7 @@ eval '<code>'                    inline script body with the same context
 types                            generate .dcompose/types/mcp.d.ts
 check [scripts...]               type-check scripts against the generated types
 runs [show <id|--label>]         inspect past runs
+auth <server>                    OAuth 2.1 sign-in for a remote server (tokens under ~/.dcompose/auth/)
 daemon start|stop|status|log     warm-connection daemon
 ```
 
@@ -123,8 +165,9 @@ Resolution order, later wins per server name: `~/.dcompose/config.json`, then `.
 ## Limits worth knowing
 
 - dcompose is a separate process, so it can only reach servers it can connect to itself:
-  stdio servers, and HTTP servers with header auth. OAuth for remote servers is planned.
-  Claude.ai-hosted connectors are unreachable by design; their tokens never leave Anthropic.
+  stdio servers, HTTP servers with header auth, and HTTP servers you sign in to once with
+  `dcompose auth`. Claude.ai-hosted connectors are unreachable by design; their tokens never
+  leave Anthropic.
 - Output types are only as good as the server's declared `outputSchema`. Undeclared fields
   type as `any` rather than erroring, and the SKILL.md tells the agent to probe one call first.
 - Guardrails bound a run; they do not sandbox it. See [SECURITY.md](SECURITY.md).

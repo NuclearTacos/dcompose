@@ -53,10 +53,14 @@ export class RunTrace {
   private readonly agg = new Map<string, Agg>();
   private readonly startedMs = Date.now();
 
-  constructor(runsDir: string, header: RunHeader) {
+  /** When set, every call record is also handed here as it happens (`--trace` streams to stderr). */
+  private readonly onRecord: ((rec: CallRecord) => void) | null;
+
+  constructor(runsDir: string, header: RunHeader, opts: { onRecord?: (rec: CallRecord) => void } = {}) {
     mkdirSync(runsDir, { recursive: true });
     this.path = join(runsDir, `${header.runId}.jsonl`);
     this.header = header;
+    this.onRecord = opts.onRecord ?? null;
     this.fd = openSync(this.path, "a");
     this.write({ kind: "run", ...header });
   }
@@ -72,6 +76,7 @@ export class RunTrace {
   record(r: Omit<CallRecord, "seq" | "t">): CallRecord {
     const rec: CallRecord = { seq: ++this.seq, t: new Date().toISOString(), ...r };
     this.write({ kind: "call", ...rec });
+    this.onRecord?.(rec);
     const key = `${r.server}.${r.tool}`;
     const a = this.agg.get(key) ?? { calls: 0, ms: 0, bytes: 0, errors: 0 };
     a.calls++;

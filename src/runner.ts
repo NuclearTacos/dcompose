@@ -32,6 +32,8 @@ export interface RunOptions {
   stateName?: string;
   /** How to print streamed items (async-generator scripts). */
   output?: OutputOptions;
+  /** Stream each call record to stderr as NDJSON while the script runs. */
+  trace?: boolean;
 }
 
 export interface RunOutcome {
@@ -52,14 +54,20 @@ function isAsyncIterable(v: unknown): v is AsyncIterable<unknown> {
 export async function runScript(opts: RunOptions): Promise<RunOutcome> {
   const id = makeRunId();
   const runsDir = join(opts.projectRoot, ".dcompose", "runs");
-  const trace = new RunTrace(runsDir, {
-    runId: id,
-    label: opts.label,
-    script: opts.script ?? "<eval>",
-    startedAt: new Date().toISOString(),
-    cwd: process.cwd(),
-    argv: process.argv.slice(2),
-  });
+  const trace = new RunTrace(
+    runsDir,
+    {
+      runId: id,
+      label: opts.label,
+      script: opts.script ?? "<eval>",
+      startedAt: new Date().toISOString(),
+      cwd: process.cwd(),
+      argv: process.argv.slice(2),
+    },
+    {
+      onRecord: opts.trace ? (rec) => process.stderr.write(JSON.stringify({ kind: "call", ...rec }) + "\n") : undefined,
+    },
+  );
   process.env.DCOMPOSE_RUN_ID = id;
   if (!opts.quiet) process.stderr.write(`[dcompose] run ${id}${opts.label ? ` (${opts.label})` : ""}\n`);
 
@@ -182,7 +190,7 @@ export function resolveScript(script: string, projectRoot: string): string {
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...a: string[]
 ) => (...args: unknown[]) => Promise<unknown>;
-const CTX_KEYS = ["mcp", "call", "input", "stdin", "pmap", "sleep", "emit", "log", "runId", "store", "sh"];
+const CTX_KEYS = ["mcp", "call", "input", "stdin", "pmap", "paginate", "sleep", "emit", "log", "runId", "store", "sh"];
 
 /** `dcompose eval`: try as a single expression first, then as a function body. */
 function compileInline(code: string): ScriptFn {

@@ -60,6 +60,7 @@ result as JSON. stderr is logs and a run summary. Exit codes: 0 ok, 1 script or 
 | \`input\` | From \`-i '<json>'\`, \`--input-file <path>\`, or \`-i -\` (stdin) |
 | \`stdin.text() / .json() / .lines() / .jsonl()\` | Piped data |
 | \`pmap(items, fn, { concurrency })\` | Bounded fan-out; use this instead of \`Promise.all\` |
+| \`paginate(async (cursor) => ({ items, next }), { maxPages })\` | Cursor paging; returns all items |
 | \`sleep(ms)\` | Polling loops |
 | \`emit(obj)\` | Interim NDJSON event on stderr (not the return value) |
 | \`log(...)\` | Human-readable stderr |
@@ -80,6 +81,7 @@ dcompose call pagerduty.get_incident '{"incident_id":"Q123"}' | jq .response.tit
 - \`--allow 'pd.list_*,pd.get_*'\` / \`--deny 'pd.resolve_*'\` limit which tools may be called.
 - \`--max-calls 50\`, \`--timeout 2m\` bound the run. Defaults come from dcompose.json.
 - \`--dry-run\` logs every call it would make and executes none. Use before any write.
+- \`--trace\` streams each tool call to stderr as it happens; useful on long or stuck runs.
 - Results over \`--max-output-bytes\` (default 64k) are written to \`.dcompose/runs/<id>.result.json\`
   and stdout gets a small stub pointing at the file, with exit 2. Return less, or read the file.
 
@@ -134,6 +136,12 @@ Use it to mix MCP data with local CLIs (git, gh, jq) inside one script.
 \`\`\`sh
 jq -c '.response[] | {incident_id: .id}' incidents.json | dcompose call pagerduty.list_incident_notes --each --concurrency 5
 \`\`\`
+
+## Remote servers that need sign-in
+
+If a server fails with "requires authentication", run \`dcompose auth <server>\` once. It opens a
+browser for OAuth and stores tokens; later commands use them silently. Ask the user to do this
+step, since it needs their browser session.
 
 ## Speed: start the daemon once per session
 

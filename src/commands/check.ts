@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import type ts from "typescript";
@@ -35,8 +35,18 @@ export async function checkCommand(scripts: string[], opts: CheckOptions): Promi
   );
   if (!parsed) throw new Error(`could not parse ${tsconfigPath}`);
 
-  const only = scripts.length
-    ? new Set(scripts.map((s) => resolve(resolveScript(s, projectRoot)).toLowerCase()).map(norm))
+  // A directory argument means every .ts/.js file directly inside it.
+  const expanded = scripts.flatMap((s) => {
+    const p = resolve(s);
+    if (existsSync(p) && statSync(p).isDirectory()) {
+      return readdirSync(p)
+        .filter((f) => /.(ts|mts|js|mjs)$/.test(f) && !f.endsWith(".d.ts"))
+        .map((f) => join(p, f));
+    }
+    return [s];
+  });
+  const only = expanded.length
+    ? new Set(expanded.map((s) => resolve(resolveScript(s, projectRoot)).toLowerCase()).map(norm))
     : null;
   const rootNames = only
     ? [
@@ -73,7 +83,11 @@ export async function checkCommand(scripts: string[], opts: CheckOptions): Promi
       getCurrentDirectory: () => process.cwd(),
       getNewLine: () => "\n",
     };
-    if (diags.length) process.stderr.write(tsMod.formatDiagnosticsWithColorAndContext(diags, host));
+    const colour = !process.env.NO_COLOR && process.stderr.isTTY;
+    if (diags.length)
+      process.stderr.write(
+        colour ? tsMod.formatDiagnosticsWithColorAndContext(diags, host) : tsMod.formatDiagnostics(diags, host),
+      );
     const checked = only ? only.size : rootNames.filter((f) => !f.endsWith(".d.ts")).length;
     process.stderr.write(
       `${diags.length === 0 ? "ok" : `${diags.length} error${diags.length === 1 ? "" : "s"}`} · ${checked} script${checked === 1 ? "" : "s"} checked\n`,

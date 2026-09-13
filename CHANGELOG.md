@@ -6,10 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `dcompose auth <server>`: OAuth 2.1 sign-in for remote servers (PKCE and dynamic client
+  registration via the MCP SDK, loopback callback on 127.0.0.1, tokens under `~/.dcompose/auth/`).
+  Normal connections pick stored tokens up and refresh them; a 401 now names the command to run.
+  Flags: `--status`, `--reset`, `--no-browser`, `--scope`, `--timeout`.
+- `--trace` on `run` and `eval`: stream each call record to stderr as NDJSON while running.
+- `ctx.paginate(fetchPage, { maxPages, maxItems })`: cursor paging helper.
+- `check <dir>` type-checks every script in a directory; CI now checks `examples/`.
+- `NO_COLOR` or a non-TTY stderr disables colour in `check` diagnostics.
+
+### Changed
+- Docs: removed the never-implemented `DCOMPOSE_PROFILE`; closed the npm-imports question,
+  since scripts can already import from the project's `node_modules`.
+
 ### Planned
 - Packs: package servers plus curated scripts for install elsewhere (`pack`, `install`, `doctor`).
 - MCP mode: serve a pack's scripts as MCP tools for hosts without a shell.
-- OAuth 2.1 for remote servers (`dcompose auth <server>`).
+- Smarter `--dry-run`: return schema-shaped empty values instead of `null` so scripts that
+  destructure results can be dry-run end to end.
 
 ## [0.1.0] - 2026-09-12
 

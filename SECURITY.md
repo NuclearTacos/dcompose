@@ -27,8 +27,17 @@ What they do not do:
 - `dcompose.local.json` is gitignored because `init --import-claude` copies server `env` blocks
   verbatim, which commonly include API tokens. Never commit it. Prefer `${ENV_VAR}` references
   in the tracked `dcompose.json`.
-- dcompose does not read Claude Code's OAuth token store and has no intention to. Remote servers
-  that need OAuth will get their own consent flow (`dcompose auth`, planned).
+- dcompose does not read Claude Code's OAuth token store and has no intention to.
+  `dcompose auth <server>` runs its own OAuth 2.1 authorization-code flow (PKCE, dynamic client
+  registration, loopback redirect on 127.0.0.1) and stores the resulting tokens under
+  `~/.dcompose/auth/`, one file per server URL, mode 0600 where the platform supports it. Normal
+  connections use and refresh those tokens silently; if a server demands a fresh sign-in they
+  fail with a message instead of opening a browser. `dcompose auth <server> --reset` deletes the
+  stored state.
+- One `dcompose run` is one shell command. In Claude Code that means one permission check for
+  the whole script rather than one per MCP call. That is a convenience and a responsibility: the
+  guardrail flags (`--read-only`, `--allow`, `--max-calls`) are how you bound what that single
+  approval can do.
 - The daemon listens on a named pipe (Windows) or a Unix socket under `~/.dcompose/daemons/`.
   It does no authentication of its own; anything running as your user can reach it and call any
   configured tool. That is the same trust boundary as the config file itself.

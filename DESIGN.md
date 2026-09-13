@@ -101,8 +101,8 @@ Isolation is not the goal; the agent already has Bash. The goal is a bounded, ob
 - `--allow server.tool,server.*` / `--deny ...`: tool allowlist. Default: allow all.
 - `--read-only`: refuse tools whose annotations lack `readOnlyHint: true`.
 - `--dry-run`: log every call with args, return `null` instead of executing.
-- `--trace`: NDJSON of every call (server, tool, args size, duration, result size) to stderr.
-  Same data is written to `.dcompose/runs/<run-id>.jsonl` always.
+- `--trace`: stream every call record (server, tool, arg/result sizes, duration) to stderr as
+  NDJSON while the script runs. The same records are always written to `.dcompose/runs/<run-id>.jsonl`.
 - Run IDs: `<UTC time>-<ULID>`, e.g. `20260911T140211Z-01J7QZ3M8KX4V9R2T6B1N5W0YD`. Sortable, unique
   across concurrent runs, prefix-addressable (`dcompose runs show 20260911T1402`). Printed on stderr
   at start, exposed to the script as `ctx.runId` and to child processes as `DCOMPOSE_RUN_ID`.
@@ -113,7 +113,8 @@ Isolation is not the goal; the agent already has Bash. The goal is a bounded, ob
 dcompose is one filter in a pipeline, not a walled garden. Rules:
 
 - **stdout is data, stderr is everything else.** Result JSON only on stdout. Logs, traces, run
-  summaries, progress on stderr. Colour and summaries auto-disable when stdout is not a TTY.
+  summaries, progress on stderr, always (an agent capturing both streams still wants the summary);
+  `-q` silences it. Colour is only used by `check` and is off under `NO_COLOR` or a non-TTY stderr.
 - **Output shaping flags** mirror `jq`: `--jsonl` prints one line per array element,
   `-r/--raw-output` prints bare strings without quotes, `-c` compact (default when piped).
 - **stdin is input.** If stdin is not a TTY it is available as `ctx.stdin.text()`,
@@ -124,7 +125,8 @@ dcompose is one filter in a pipeline, not a walled garden. Rules:
   bounded concurrency, NDJSON results out. The `xargs` of MCP.
 - **Exit codes are stable** (0/1/2/3) and `set -e` friendly. Guardrail hits are exit 2, not 1,
   so a script can distinguish "my code is wrong" from "I hit a limit".
-- **Environment.** `DCOMPOSE_CONFIG`, `DCOMPOSE_RUN_ID`, `DCOMPOSE_PROFILE`, `NO_COLOR` honoured.
+- **Environment.** `DCOMPOSE_CONFIG`, `DCOMPOSE_RUN_ID`, `DCOMPOSE_NO_DAEMON`, `DCOMPOSE_AUTH_DIR`,
+  `NO_COLOR` honoured.
 - **Scripts can shell out, opt-in.** `ctx.sh(cmd, {stdin})` returns `{stdout, stderr, code}`
   and is enabled only with `--allow-exec`. Recorded in the run trace like a tool call. Off by
   default because a read-only run should mean read-only.
@@ -240,8 +242,9 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
 
 ## Open questions
 
-- Should scripts be able to `import` npm packages from the project? Useful (lodash, date-fns),
-  but widens the surface. Lean yes, resolved from the project's `node_modules`.
+- ~~Should scripts be able to `import` npm packages from the project?~~ Resolved: they already
+  can. Node resolves imports from the script's own location upward, so a project's `node_modules`
+  is found with no dcompose involvement.
 - Auto-parse heuristics: some servers return Markdown tables, not JSON. Provide `raw` and
   let the agent handle it; do not try to parse Markdown.
 - Windows: stdio servers spawned via `npx`/`uvx` need shell resolution. Reuse the same spawn
@@ -249,13 +252,13 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
 
 ## Auth regimes (what dcompose can and cannot reuse from Claude Code)
 
-| Regime                                                      | Example                                                                 | dcompose access                                                                            | Import behaviour                                    |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| Stdio server                                                | pagerduty via `uvx`, chrome-devtools via `npx`                          | Full. Spawn same command + env.                                                            | Copy entry verbatim                                 |
-| Remote + static headers / env var                           | `"headers": {"Authorization": "Bearer ${TOKEN}"}`                       | Full. Secret is already in config.                                                         | Copy entry verbatim                                 |
-| Remote + OAuth done by Claude Code                          | Locally added `https://mcp.example.com/mcp`                             | Do our own OAuth 2.1 flow against the same URL. Do **not** read Claude Code's token store. | Copy URL, mark `"oauth": true`, prompt on first use |
-| claude.ai-hosted connector                                  | `mcp__claude_ai_*` (Microsoft 365, Notion, Atlassian, Rock MCP Staging) | None. Tokens live on Anthropic's servers.                                                  | Skip with message; suggest public endpoint if known |
-| Sender-constrained (DPoP / mTLS) or allow-listed client IDs | Enterprise gateways                                                     | None until admin registers dcompose                                                        | Skip with message                                   |
+| Regime                                                      | Example                                                                 | dcompose access                                                                                                                                                                     | Import behaviour                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Stdio server                                                | pagerduty via `uvx`, chrome-devtools via `npx`                          | Full. Spawn same command + env.                                                                                                                                                     | Copy entry verbatim                                 |
+| Remote + static headers / env var                           | `"headers": {"Authorization": "Bearer ${TOKEN}"}`                       | Full. Secret is already in config.                                                                                                                                                  | Copy entry verbatim                                 |
+| Remote + OAuth done by Claude Code                          | Locally added `https://mcp.example.com/mcp`                             | `dcompose auth <server>`: our own OAuth 2.1 flow (PKCE, dynamic registration) against the same URL; tokens under `~/.dcompose/auth/`. We do **not** read Claude Code's token store. | Copy URL; a 401 names the `auth` command to run     |
+| claude.ai-hosted connector                                  | `mcp__claude_ai_*` (Microsoft 365, Notion, Atlassian, Rock MCP Staging) | None. Tokens live on Anthropic's servers.                                                                                                                                           | Skip with message; suggest public endpoint if known |
+| Sender-constrained (DPoP / mTLS) or allow-listed client IDs | Enterprise gateways                                                     | None until admin registers dcompose                                                                                                                                                 | Skip with message                                   |
 
 Inverse does not help: an MCP server cannot call the host's other tools, so `dcompose mcp`
 is equally isolated from connectors.

@@ -21,6 +21,7 @@ export interface RunCliOptions extends OutputOptions {
   rawOutput?: boolean;
   allowExec?: boolean;
   state?: string;
+  trace?: boolean;
 }
 
 export async function runCommand(
@@ -52,6 +53,7 @@ export async function runCommand(
     allowExec: opts.allowExec,
     stateName: opts.state,
     output: { raw: opts.rawOutput },
+    trace: opts.trace,
   });
 
   if (outcome.streamed === 0 && outcome.value !== undefined) {
