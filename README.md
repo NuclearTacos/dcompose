@@ -144,6 +144,7 @@ runs [show <id|--label>]         inspect past runs
 auth <server>                    OAuth 2.1 sign-in for a remote server (tokens under ~/.dcompose/auth/)
 where                            paths dcompose will use from this directory (root, config, scripts, runs)
 import [names...] [--user]       copy servers from Claude Code's config into ~/.dcompose/config.json
+new <name> [--stream]            scaffold a script at this directory's scripts path and print the path
 skill [--user|--project]         write the Claude Code skill files (SKILL.md, patterns.md, pitfalls.md)
 daemon start|stop|status|log     warm-connection daemon
 ```

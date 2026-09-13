@@ -17,6 +17,7 @@ import { authCommand } from "./commands/auth.ts";
 import { whereCommand } from "./commands/where.ts";
 import { skillCommand } from "./commands/skill.ts";
 import { importCommand } from "./commands/import.ts";
+import { newCommand } from "./commands/new.ts";
 import { configHash, findProjectRoot, type Config } from "./config.ts";
 
 const program = new Command()
@@ -135,9 +136,17 @@ program
   .action(async (names, opts) => process.exit(await importCommand(names, opts)));
 
 program
+  .command("new <name>")
+  .description("scaffold a script with the default-export skeleton at this directory's scripts path and print the path")
+  .option("--force", "overwrite if it exists")
+  .option("--stream", "scaffold an async generator (yield shape) instead")
+  .action(async (name, opts) => process.exit(await newCommand(name, opts)));
+
+program
   .command("servers")
   .description("list configured servers with connection status and tool counts")
   .option("--json", "machine-readable output")
+  .option("--strict", "exit 3 if any server fails to connect (default: exit 0 unless all fail)")
   .action((opts) => run((r) => serversCommand(r, opts)));
 
 program
@@ -232,6 +241,7 @@ program
   .option("--force", "regenerate even if tool schemas are unchanged")
   .option("--out <path>", "write somewhere else")
   .option("--print", "print to stdout instead of writing")
+  .option("--strict", "exit 3 if any server failed (default: write types for the rest and exit 0)")
   .action((opts) => run((r) => typesCommand(r, opts)));
 
 program

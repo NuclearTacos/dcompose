@@ -88,6 +88,8 @@ export async function checkCommand(scripts: string[], opts: CheckOptions): Promi
       process.stderr.write(
         colour ? tsMod.formatDiagnosticsWithColorAndContext(diags, host) : tsMod.formatDiagnostics(diags, host),
       );
+    // Echo what a bare name resolved to; in workspace mode that path is not guessable.
+    if (only) for (const s of expanded) process.stderr.write(`checking ${resolveScript(s, projectRoot)}\n`);
     const checked = only ? only.size : rootNames.filter((f) => !f.endsWith(".d.ts")).length;
     process.stderr.write(
       `${diags.length === 0 ? "ok" : `${diags.length} error${diags.length === 1 ? "" : "s"}`} · ${checked} script${checked === 1 ? "" : "s"} checked\n`,

@@ -77,16 +77,29 @@ avoid reading data you actually need to reason about.
    \`\`\`
    Note which tools carry \`[read-only]\`. Servers that annotate nothing (common) make
    \`--read-only\` refuse everything; use \`--allow\` with explicit tool names for those.
-2. **Read the exact signatures.** \`dcompose types\` writes \`.dcompose/types/mcp.d.ts\`.
-   Grep it for the tool name instead of guessing argument names. Input types are exact.
+2. **Read the exact signatures.** \`dcompose types\` writes the \`types\` file that
+   \`dcompose where\` reported. Grep it for the tool name instead of guessing argument names.
+   Input types are exact. (If an unrelated server fails to connect, types are still written for
+   the rest; the command says so and exits 0.)
    **Output types are only as good as the server's declared schema**: they often omit fields
    that are really there, and tools with no schema return \`any\`. Before joining on a field,
    probe one real call:
    \`\`\`sh
    dcompose call <server>.<tool> '{"limit":2}' --read-only
    \`\`\`
-3. **Write the script** at \`.dcompose/scripts/<name>.ts\`. Copy the closest shape from
-   patterns.md. Return only what you need; anything you return lands in your context.
+3. **Write the script.** \`dcompose new <name>\` scaffolds it at the \`scripts\` path from
+   \`dcompose where\` and prints the path. A script is a module whose default export takes the
+   context and returns the value to print; nothing else works (no top-level \`await\`, no bare
+   \`return\`):
+   \`\`\`ts
+   import type { Ctx } from "dcompose";
+   export default async function ({ mcp, pmap, unwrap, input }: Ctx<{ limit?: number }>) {
+     const { response } = await mcp.someServer.list_things({ limit: input.limit ?? 100 });
+     return response.map((r) => ({ id: r.id, name: r.name }));
+   }
+   \`\`\`
+   Copy the closest shape from patterns.md. Return only what you need; anything you return
+   lands in your context.
 4. **Type-check, then run.**
    \`\`\`sh
    dcompose check <name>
@@ -107,7 +120,7 @@ avoid reading data you actually need to reason about.
 | \`pmap(items, fn, { concurrency })\` | Bounded fan-out; use this instead of \`Promise.all\` |
 | \`paginate(async (cursor) => ({ items, next }), { maxPages })\` | Cursor paging; returns all items |
 | \`sleep(ms)\` | Polling loops |
-| \`unwrap(value)\` | Parse JSON a server returned inside a string field, e.g. \`{ result: "{...}" }\`. \`dcompose call\` prints a note when a result needs this |
+| \`unwrap(value)\` | Parse JSON a server returned inside a string field. Pass the whole result or just the string; both work: \`unwrap(await mcp.pd.get_metrics(w)).result.total\`. \`dcompose call\` prints a note when a result needs this |
 | \`emit(obj)\` | Interim NDJSON event on stderr (not the return value) |
 | \`log(...)\` | Human-readable stderr |
 | \`store.get/set/delete/all\` | JSON state persisted at \`.dcompose/state/<script>.json\` across runs |

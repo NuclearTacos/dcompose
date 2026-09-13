@@ -188,6 +188,76 @@ describe("cli: import and init gitignore", () => {
   });
 });
 
+describe("cli: one broken server does not fail servers/types; new scaffolds; run echoes path", () => {
+  let project: string;
+  const run = (args: string[], env: Record<string, string> = {}) =>
+    spawnSync(process.execPath, [CLI, ...args], {
+      cwd: project,
+      encoding: "utf8",
+      env: { ...process.env, DCOMPOSE_NO_DAEMON: "1", ...env },
+      timeout: 60_000,
+      windowsHide: true,
+    });
+
+  before(() => {
+    project = tmp();
+    writeFileSync(
+      join(project, "dcompose.json"),
+      JSON.stringify({
+        mcpServers: {
+          echo: { command: process.execPath, args: [FIXTURE] },
+          broken: { command: "definitely-not-a-real-binary-xyz" },
+        },
+        defaults: { connectTimeoutMs: 20_000 },
+      }),
+    );
+  });
+
+  test("servers: exit 0 with a warning when one server fails, exit 3 with --strict", () => {
+    const r = run(["servers"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /echo\s+stdio\s+connected/);
+    assert.match(r.stdout, /broken\s+stdio\s+error/);
+    assert.match(r.stderr, /1 of 2 servers failed to connect \(exit 0/);
+    assert.equal(run(["servers", "--strict"]).status, 3);
+  });
+
+  test("types: written for the working servers, exit 0, --strict exits 3", () => {
+    const r = run(["types", "--force"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /wrote .*mcp\.d\.ts: 1 server/);
+    assert.match(r.stderr, /1 server failed to connect/);
+    assert.match(readFileSync(join(project, ".dcompose", "types", "mcp.d.ts"), "utf8"), /echo: Echo;/);
+    assert.equal(run(["types", "--force", "--strict"]).status, 3);
+  });
+
+  test("new scaffolds a default-export script at the scripts path and prints it; check passes on it", () => {
+    const r = run(["new", "digest"]);
+    assert.equal(r.status, 0, r.stderr);
+    const path = r.stdout.trim();
+    assert.ok(existsSync(path), path);
+    assert.match(
+      readFileSync(path, "utf8"),
+      /export default async function \(\{ mcp, pmap, paginate, unwrap, input, log \}: Ctx<Input>\)/,
+    );
+    assert.equal(run(["new", "digest"]).status, 3, "refuses to overwrite without --force");
+    assert.equal(run(["new", "digest", "--force"]).status, 0);
+    assert.equal(run(["new", "../escape"]).status, 3);
+    const chk = run(["check", "digest"]);
+    assert.equal(chk.status, 0, chk.stderr);
+    assert.match(chk.stderr, /checking .*digest\.ts/);
+    const stream = run(["new", "feed", "--stream"]);
+    assert.match(readFileSync(stream.stdout.trim(), "utf8"), /export default async function\* /);
+  });
+
+  test("run header echoes the resolved script path", () => {
+    const r = run(["run", "digest", "--allow", "none.*"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /\[dcompose\] run \S+ · script .*digest\.ts/);
+    assert.deepEqual(JSON.parse(r.stdout), { todo: true });
+  });
+});
+
 describe("cli: --trace, NO_COLOR, check on a directory", () => {
   let project: string;
   const dc = (args: string[], env: Record<string, string> = {}) =>

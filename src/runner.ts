@@ -69,7 +69,11 @@ export async function runScript(opts: RunOptions): Promise<RunOutcome> {
     },
   );
   process.env.DCOMPOSE_RUN_ID = id;
-  if (!opts.quiet) process.stderr.write(`[dcompose] run ${id}${opts.label ? ` (${opts.label})` : ""}\n`);
+  if (!opts.quiet) {
+    // Echo the resolved script path: bare names resolve under a workspace dir nobody can guess.
+    const where = opts.script ? ` · script ${safeResolve(opts.script, opts.projectRoot)}` : "";
+    process.stderr.write(`[dcompose] run ${id}${opts.label ? ` (${opts.label})` : ""}${where}\n`);
+  }
 
   const stateName = opts.stateName ?? (opts.script ? basename(opts.script, extname(opts.script)) : "_eval");
   const ctx = buildContext({
@@ -256,4 +260,13 @@ function printSummary(trace: RunTrace, s: RunSummary, streamed: number): void {
   process.stderr.write(
     `[dcompose] ${status} in ${fmtMs(s.ms)} · ${s.calls} call${s.calls === 1 ? "" : "s"} · ${out} · trace ${trace.path}\n`,
   );
+}
+
+/** resolveScript for logging: never throw from the header line; the real resolve happens in loadScript. */
+function safeResolve(script: string, projectRoot: string): string {
+  try {
+    return resolveScript(script, projectRoot);
+  } catch {
+    return script;
+  }
 }

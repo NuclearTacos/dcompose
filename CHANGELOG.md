@@ -22,7 +22,11 @@ All notable changes to this project are documented here. The format follows
   running `init --import-claude` inside repos that should not gain dcompose files.
 - `ctx.unwrap(value)`: parse JSON that a server returned inside a string field
   (PagerDuty's analytics tools do this). `dcompose call` prints a note naming such fields.
-- `where`, `skill --user|--project`: see above.
+- `where`, `skill --user|--project`, `new <name> [--stream]` (scaffolds the default-export
+  skeleton at the resolved scripts path and prints it).
+- `servers` and `types` exit 0 with a warning when an unrelated server fails to connect, as
+  long as output was produced; `--strict` restores exit 3. `run` and `check` echo the resolved
+  script path so bare names are traceable in workspace mode.
 - Directories with no project config get a per-directory workspace under
   `~/.dcompose/workspaces/` for runs, state, and types, so running on user-level config alone
   never writes into someone else's repo. `DCOMPOSE_HOME` relocates `~/.dcompose`.

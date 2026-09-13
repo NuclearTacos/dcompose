@@ -11,6 +11,8 @@ export interface TypesOptions {
   force?: boolean;
   out?: string;
   print?: boolean;
+  /** Exit 3 if any server failed, even though types were written for the rest. */
+  strict?: boolean;
 }
 
 export async function typesCommand(registry: Registry, opts: TypesOptions): Promise<number> {
@@ -38,7 +40,7 @@ export async function typesCommand(registry: Registry, opts: TypesOptions): Prom
   if (!opts.force && !opts.print && existsSync(outPath) && readHash(readFileSync(outPath, "utf8")) === hash) {
     err(`types up to date (${relative(process.cwd(), outPath) || outPath}); use --force to regenerate`);
     writeTsconfig(dir, projectRoot);
-    return failures ? EXIT.CONFIG : EXIT.OK;
+    return failures && opts.strict ? EXIT.CONFIG : EXIT.OK;
   }
 
   const source = await generateTypes(byServer);
@@ -51,12 +53,16 @@ export async function typesCommand(registry: Registry, opts: TypesOptions): Prom
   writeFileSync(outPath, source, "utf8");
   writeTsconfig(dir, projectRoot);
 
+  if (failures)
+    err(
+      `${failures} server${failures === 1 ? "" : "s"} failed to connect and ${failures === 1 ? "is" : "are"} not in the types (exit 0; --strict to fail on this)`,
+    );
   const total = [...byServer.values()].reduce((n, t) => n + t.length, 0);
   const withOut = [...byServer.values()].flat().filter((t) => t.outputSchema).length;
   err(
     `wrote ${relative(process.cwd(), outPath) || outPath}: ${byServer.size} server${byServer.size === 1 ? "" : "s"}, ${total} tools (${withOut} with output schemas)`,
   );
-  return failures ? EXIT.CONFIG : EXIT.OK;
+  return failures && opts.strict ? EXIT.CONFIG : EXIT.OK;
 }
 
 /**

@@ -11,7 +11,7 @@ interface Row {
   error?: string;
 }
 
-export async function serversCommand(registry: Registry, opts: { json?: boolean }): Promise<number> {
+export async function serversCommand(registry: Registry, opts: { json?: boolean; strict?: boolean }): Promise<number> {
   const rows: Row[] = await Promise.all(
     registry.all().map(async (s): Promise<Row> => {
       try {
@@ -52,5 +52,14 @@ export async function serversCommand(registry: Registry, opts: { json?: boolean 
     for (const r of rows) if (r.error) process.stderr.write(`\n${r.error}\n`);
   }
 
-  return rows.some((r) => r.status === "error") ? 3 : 0;
+  // A status report that produced output is a success; one broken server is information, not
+  // failure (an agent reading "non-zero = stop" would otherwise abandon a working setup).
+  // --strict restores exit 3 on any error; all servers failing is always exit 3.
+  const errors = rows.filter((r) => r.status === "error").length;
+  if (errors === 0) return 0;
+  if (opts.strict || errors === rows.length) return 3;
+  process.stderr.write(
+    `\n${errors} of ${rows.length} servers failed to connect (exit 0; use --strict to fail on this)\n`,
+  );
+  return 0;
 }
