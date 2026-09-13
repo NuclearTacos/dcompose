@@ -41,6 +41,11 @@ All notable changes to this project are documented here. The format follows
   the file was gitignored. Found by a real session that wrote an API key into an unignored file.
 
 ### Fixed
+- `check` reported "ok" without compiling anything when a script's absolute path contained an
+  uppercase letter on a case-sensitive filesystem. The paths were normalised (lowercased, so
+  Windows comparisons work) before being handed to TypeScript as root names, so the compiler
+  found no such file and produced no diagnostics — a silent false pass. The real on-disk casing
+  is now what gets compiled; normalisation is used only for matching.
 - Running dcompose from inside a workspace or project `.dcompose/` tree (e.g. its scripts folder)
   no longer computes a second, nested workspace; any ancestor containing `.dcompose/` is the root.
   A real session hit "script not found" this way.

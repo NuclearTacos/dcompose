@@ -19,7 +19,7 @@ export default async function ({ mcp, pmap, input, log, emit }: Ctx<Input>) {
   let cursor = since.toISOString();
   for (let page = 1; ; page++) {
     const { response } = await mcp.pagerduty.list_incidents({ since: cursor, limit: 100 });
-    const fresh = response.filter((i) => !incidents.some((k) => k.id === i.id));
+    const fresh = response.filter((i: Incident) => !incidents.some((k) => k.id === i.id));
     incidents.push(...fresh);
     emit({ kind: "page", page, got: response.length, total: incidents.length });
     if (response.length < 100 || fresh.length === 0) break;

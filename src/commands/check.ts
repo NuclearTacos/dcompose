@@ -45,13 +45,18 @@ export async function checkCommand(scripts: string[], opts: CheckOptions): Promi
     }
     return [s];
   });
-  const only = expanded.length
-    ? new Set(expanded.map((s) => resolve(resolveScript(s, projectRoot)).toLowerCase()).map(norm))
-    : null;
+  // `norm` lowercases so Windows paths compare correctly, but TypeScript must be handed the real
+  // path: a lowercased root name does not exist on a case-sensitive filesystem, and tsc then
+  // silently checks nothing and reports "ok". Keep the two apart — `targets` is what gets compiled,
+  // `only` is only ever used for matching. Deduped by normalised form, keeping the on-disk casing.
+  const targets = [
+    ...new Map(expanded.map((s) => resolve(resolveScript(s, projectRoot))).map((p) => [norm(p), p])).values(),
+  ];
+  const only = targets.length ? new Set(targets.map(norm)) : null;
   const rootNames = only
     ? [
         ...parsed.fileNames.filter((f) => only.has(norm(resolve(f)))),
-        ...[...only].filter((f) => !parsed.fileNames.some((p) => norm(resolve(p)) === f)),
+        ...targets.filter((f) => !parsed.fileNames.some((p) => norm(resolve(p)) === norm(f))),
       ]
     : parsed.fileNames;
   // Always include the generated types so the module augmentation is in scope.
