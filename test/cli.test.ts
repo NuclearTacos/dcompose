@@ -58,7 +58,7 @@ describe("servers / tools", () => {
     const rows = r.json() as { name: string; status: string; tools: number }[];
     assert.equal(rows[0]!.name, "echo");
     assert.equal(rows[0]!.status, "connected");
-    assert.equal(rows[0]!.tools, 7);
+    assert.equal(rows[0]!.tools, 8);
   });
   test("tools lists read-only markers and supports grep", () => {
     const r = dc(["tools", "echo", "--grep", "write"]);

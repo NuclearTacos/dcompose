@@ -250,6 +250,23 @@ describe("cli: one broken server does not fail servers/types; new scaffolds; run
     assert.match(readFileSync(stream.stdout.trim(), "utf8"), /export default async function\* /);
   });
 
+  test("tools notes when a server annotates some tools read-only; call notes plain and prefixed text", () => {
+    const t = run(["tools", "echo"]);
+    assert.equal(t.status, 0, t.stderr);
+    assert.match(t.stderr, /note: \d+ of \d+ tools are annotated read-only; --read-only refuses the other \d+/);
+
+    const plain = run(["call", "echo.prose"]);
+    assert.match(plain.stderr, /result is plain text, not JSON/);
+
+    const prefixed = run(["call", "echo.prefixed"]);
+    assert.equal(prefixed.status, 0, prefixed.stderr);
+    assert.match(prefixed.stderr, /text with JSON after a prefix/);
+    assert.match(prefixed.stdout, /^"\[fixture\] 2 builds/);
+
+    const json = run(["call", "echo.add", '{"a":1,"b":2}']);
+    assert.doesNotMatch(json.stderr, /note:/);
+  });
+
   test("run header echoes the resolved script path", () => {
     const r = run(["run", "digest", "--allow", "none.*"]);
     assert.equal(r.status, 0, r.stderr);

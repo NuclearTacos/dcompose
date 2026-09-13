@@ -57,6 +57,20 @@ export async function toolsCommand(registry: Registry, opts: ToolsOptions): Prom
     if (rows.length) process.stdout.write(table(rows, { maxWidth: [60, 90, 12] }) + "\n");
   }
 
+  // Whether --read-only is even usable depends on the server's annotations; say so up front.
+  if (!opts.json && tools.length) {
+    const ro = tools.filter((t) => t.readOnly).length;
+    const scope = opts.server ?? "these servers";
+    if (ro === 0) {
+      process.stderr.write(
+        `note: 0 of ${tools.length} tools on ${scope} are annotated read-only; --read-only would refuse them all. Use --allow with explicit tool names.\n`,
+      );
+    } else if (ro < tools.length) {
+      process.stderr.write(
+        `note: ${ro} of ${tools.length} tools are annotated read-only; --read-only refuses the other ${tools.length - ro}.\n`,
+      );
+    }
+  }
   for (const e of errors) process.stderr.write(`dcompose: ${e}\n`);
   return errors.length && tools.length === 0 ? 3 : 0;
 }

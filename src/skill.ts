@@ -118,7 +118,7 @@ avoid reading data you actually need to reason about.
 | \`input\` | From \`-i '<json>'\`, \`--input-file <path>\`, or \`-i -\` (stdin) |
 | \`stdin.text() / .json() / .lines() / .jsonl()\` | Piped data |
 | \`pmap(items, fn, { concurrency })\` | Bounded fan-out; use this instead of \`Promise.all\` |
-| \`paginate(async (cursor) => ({ items, next }), { maxPages })\` | Cursor paging; returns all items |
+| \`paginate(async (cursor) => ({ items, next }), { maxPages })\` | Paging; returns all items. No cursor/offset param on the tool? Use time as the cursor: \`next: items.length === limit ? items.at(-1).created_at : null\` passed back as \`since\`, then dedupe by id (the boundary item repeats). Page caps are often hidden (PagerDuty: 100) |
 | \`sleep(ms)\` | Polling loops |
 | \`unwrap(value)\` | Parse JSON a server returned inside a string field. Pass the whole result or just the string; both work: \`unwrap(await mcp.pd.get_metrics(w)).result.total\`. \`dcompose call\` prints a note when a result needs this |
 | \`emit(obj)\` | Interim NDJSON event on stderr (not the return value) |
@@ -470,6 +470,21 @@ Do: probe one real call before writing a join, and look at the actual keys.
 \`\`\`sh
 dcompose call pagerduty.list_incidents '{"limit":1}' --read-only | jq '.response[0] | keys'
 \`\`\`
+Then read the undeclared field directly (\`r.id\` is \`any\` on open output types; no cast needed).
+If you do declare your own interface and \`check\` reports TS2352 ("conversion may be a
+mistake") on \`response as Mine[]\`, the declared and real types do not overlap enough; write
+\`response as unknown as Mine[]\`.
+
+## The result is plain text, or text with JSON after a prefix
+
+Some tools return prose, or a summary line followed by JSON (AppVeyor's \`list_builds\` returns
+\`"[rock-source] {summary}\\n[ ...json... ]"\`). Auto-parse leaves these as strings and \`unwrap\`
+will not parse a string that is not JSON end to end. \`dcompose call\` prints a note when a result
+is a non-JSON string.
+
+Do: \`const text = String(raw); const json = JSON.parse(text.slice(text.indexOf("\\n[") + 1))\`
+or whatever the probe shows the boundary to be. If it is your team's server, fix it there:
+return \`structuredContent\` and the whole problem disappears.
 
 ## The result is JSON inside a string
 

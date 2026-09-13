@@ -49,6 +49,16 @@ server.registerTool(
 );
 
 server.registerTool(
+  "prefixed",
+  {
+    description: "A summary line followed by JSON, like some real servers return.",
+    inputSchema: z.object({}),
+    annotations: { readOnlyHint: true },
+  },
+  async () => ({ content: [{ type: "text", text: '[fixture] 2 builds\n[{"v":1},{"v":2}]' }] }),
+);
+
+server.registerTool(
   "fail",
   { description: "Always returns an MCP tool error.", inputSchema: z.object({ message: z.string().optional() }) },
   async ({ message }) => ({ content: [{ type: "text", text: message ?? "it failed" }], isError: true }),

@@ -90,6 +90,24 @@ export async function callCommand(
     emitResult(value, { ...opts, raw: opts.rawOutput });
     // Servers sometimes return JSON wrapped in a string field. Say so, since scripts written against
     // the generated types will otherwise treat it as text.
+    if (!opts.raw && typeof value === "string") {
+      // Does JSON start at some later line? (The whole string did not parse, or auto-parse would have.)
+      const lines = value.split("\n");
+      const hasJsonLine = lines.some((l, i) => {
+        if (i === 0 || !/^\s*[[{]/.test(l)) return false;
+        try {
+          JSON.parse(lines.slice(i).join("\n"));
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      process.stderr.write(
+        hasJsonLine
+          ? "note: result is text with JSON after a prefix; scripts receive the whole string. Slice from the first line that starts with [ or { and JSON.parse it, or fix the server to return structuredContent.\n"
+          : "note: result is plain text, not JSON; scripts receive a string.\n",
+      );
+    }
     const wrapped = opts.raw ? [] : jsonStringFields(value);
     if (wrapped.length) {
       process.stderr.write(

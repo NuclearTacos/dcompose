@@ -24,6 +24,8 @@ All notable changes to this project are documented here. The format follows
   (PagerDuty's analytics tools do this). `dcompose call` prints a note naming such fields.
 - `where`, `skill --user|--project`, `new <name> [--stream]` (scaffolds the default-export
   skeleton at the resolved scripts path and prints it).
+- `tools` notes how many tools a server annotates read-only (and that `--read-only` refuses the
+  rest); `call` notes when a result is plain text or text with JSON after a prefix.
 - `servers` and `types` exit 0 with a warning when an unrelated server fails to connect, as
   long as output was produced; `--strict` restores exit 3. `run` and `check` echo the resolved
   script path so bare names are traceable in workspace mode.
