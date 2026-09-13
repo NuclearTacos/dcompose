@@ -149,7 +149,12 @@ daemon start|stop|status|log     warm-connection daemon
 
 Resolution order, later wins per server name: `~/.dcompose/config.json`, then `./dcompose.json`
 (commit this, use `${ENV_VAR}` for secrets), then `./dcompose.local.json` (gitignored; where
-`--import-claude` writes). Entries use Claude Code's `mcpServers` shape:
+`--import-claude` writes). Entries use Claude Code's `mcpServers` shape.
+
+A directory with no project config still works on the user-level file alone, and its runs,
+state, and generated types go to a per-directory workspace under `~/.dcompose/workspaces/`
+rather than into that directory. `DCOMPOSE_HOME` relocates `~/.dcompose` entirely (config,
+OAuth tokens, daemon sockets, workspaces); the test suite uses it for isolation.
 
 ```json
 {

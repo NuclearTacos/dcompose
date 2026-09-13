@@ -10,11 +10,16 @@ All notable changes to this project are documented here. The format follows
 - `dcompose auth <server>`: OAuth 2.1 sign-in for remote servers (PKCE and dynamic client
   registration via the MCP SDK, loopback callback on 127.0.0.1, tokens under `~/.dcompose/auth/`).
   Normal connections pick stored tokens up and refresh them; a 401 now names the command to run.
-  Flags: `--status`, `--reset`, `--no-browser`, `--scope`, `--timeout`.
+  Flags: `--status`, `--reset`, `--no-browser`, `--scope`, `--timeout`. Verified live against
+  New Relic's MCP server, whose authorization server requires a `state` parameter; dcompose
+  sends a random one and verifies it on the callback.
 - `--trace` on `run` and `eval`: stream each call record to stderr as NDJSON while running.
 - `ctx.paginate(fetchPage, { maxPages, maxItems })`: cursor paging helper.
 - `check <dir>` type-checks every script in a directory; CI now checks `examples/`.
 - `NO_COLOR` or a non-TTY stderr disables colour in `check` diagnostics.
+- Directories with no project config get a per-directory workspace under
+  `~/.dcompose/workspaces/` for runs, state, and types, so running on user-level config alone
+  never writes into someone else's repo. `DCOMPOSE_HOME` relocates `~/.dcompose`.
 
 ### Changed
 - Docs: removed the never-implemented `DCOMPOSE_PROFILE`; closed the npm-imports question,

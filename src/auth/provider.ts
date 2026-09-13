@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { dcomposeHome } from "../config.ts";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformationMixed,
@@ -9,7 +9,9 @@ import type {
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 
-export const AUTH_DIR = join(homedir(), ".dcompose", "auth");
+export function authDir(): string {
+  return process.env.DCOMPOSE_AUTH_DIR || join(dcomposeHome(), "auth");
+}
 
 /** Thrown when a server needs OAuth and nobody is there to complete the browser flow. */
 export class NeedsAuthError extends Error {
@@ -26,6 +28,7 @@ interface Persisted {
   clientInformation?: OAuthClientInformationMixed;
   tokens?: OAuthTokens;
   codeVerifier?: string;
+  state?: string;
   updatedAt: string;
 }
 
@@ -78,11 +81,31 @@ export class FileOAuthProvider implements OAuthClientProvider {
     };
   }
 
+  /**
+   * CSRF state for the authorization request. Some authorization servers (New Relic's, for one)
+   * reject requests without a sufficiently long state. Persisted so the callback can verify it.
+   */
+  state(): string {
+    const s = randomBytes(16).toString("hex");
+    this.data.state = s;
+    this.flush();
+    return s;
+  }
+
+  /** The state issued by the most recent `state()` call, for the callback to compare against. */
+  get expectedState(): string | undefined {
+    return this.data.state;
+  }
+
   clientInformation(): OAuthClientInformationMixed | undefined {
     return this.data.clientInformation;
   }
 
   saveClientInformation(info: OAuthClientInformationMixed): void {
+    // Only an interactive `dcompose auth` may register a client. A non-interactive connection that
+    // stumbles into registration (no redirect URL) would persist a registration with no
+    // redirect_uris, and the later real sign-in would be rejected for a redirect mismatch.
+    if (!this.opts.onRedirect) return;
     this.data.clientInformation = info;
     this.flush();
   }
@@ -115,7 +138,10 @@ export class FileOAuthProvider implements OAuthClientProvider {
     if (scope === "all") this.data = { serverUrl: this.opts.serverUrl, updatedAt: new Date().toISOString() };
     if (scope === "all" || scope === "client") delete this.data.clientInformation;
     if (scope === "all" || scope === "tokens") delete this.data.tokens;
-    if (scope === "all" || scope === "verifier") delete this.data.codeVerifier;
+    if (scope === "all" || scope === "verifier") {
+      delete this.data.codeVerifier;
+      delete this.data.state;
+    }
     this.flush();
   }
 
@@ -147,7 +173,7 @@ export class FileOAuthProvider implements OAuthClientProvider {
   }
 }
 
-export function tokenPath(server: string, serverUrl: string, dir = process.env.DCOMPOSE_AUTH_DIR || AUTH_DIR): string {
+export function tokenPath(server: string, serverUrl: string, dir = authDir()): string {
   const safe = server.replace(/[^A-Za-z0-9._-]+/g, "_");
   const hash = createHash("sha1").update(serverUrl).digest("hex").slice(0, 8);
   return join(dir, `${safe}-${hash}.json`);

@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
+// Isolate from the developer's real ~/.dcompose (user config, auth tokens, daemon records).
+process.env.DCOMPOSE_HOME = mkdtempSync(join(tmpdir(), "dcompose-home-"));
 const CLI = join(ROOT, "src", "cli.ts");
 const FIXTURE = join(ROOT, "test", "fixtures", "echo-server.ts");
 

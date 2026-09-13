@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { dcomposeHome } from "../config.ts";
 
 /** NDJSON request/response over a local socket. One JSON object per line. */
 
@@ -48,7 +48,9 @@ export interface DaemonRecord {
   startedAt: string;
 }
 
-export const DAEMON_DIR = join(homedir(), ".dcompose", "daemons");
+export function daemonDir(): string {
+  return join(dcomposeHome(), "daemons");
+}
 
 export function projectKey(projectRoot: string): string {
   return createHash("sha1").update(projectRoot.toLowerCase().replace(/\\/g, "/")).digest("hex").slice(0, 12);
@@ -58,8 +60,9 @@ export function projectKey(projectRoot: string): string {
 export function socketPath(projectRoot: string): string {
   const key = projectKey(projectRoot);
   if (process.platform === "win32") return `\\\\.\\pipe\\dcompose-${key}`;
-  mkdirSync(DAEMON_DIR, { recursive: true });
-  return join(DAEMON_DIR, `${key}.sock`);
+  const dir = daemonDir();
+  mkdirSync(dir, { recursive: true });
+  return join(dir, `${key}.sock`);
 }
 
 export function recordPath(projectRoot: string): string {

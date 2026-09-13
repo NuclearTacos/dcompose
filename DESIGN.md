@@ -125,8 +125,11 @@ dcompose is one filter in a pipeline, not a walled garden. Rules:
   bounded concurrency, NDJSON results out. The `xargs` of MCP.
 - **Exit codes are stable** (0/1/2/3) and `set -e` friendly. Guardrail hits are exit 2, not 1,
   so a script can distinguish "my code is wrong" from "I hit a limit".
-- **Environment.** `DCOMPOSE_CONFIG`, `DCOMPOSE_RUN_ID`, `DCOMPOSE_NO_DAEMON`, `DCOMPOSE_AUTH_DIR`,
-  `NO_COLOR` honoured.
+- **Environment.** `DCOMPOSE_CONFIG`, `DCOMPOSE_HOME`, `DCOMPOSE_RUN_ID`, `DCOMPOSE_NO_DAEMON`,
+  `DCOMPOSE_AUTH_DIR`, `NO_COLOR` honoured.
+- **Never litter an unconfigured directory.** With only user-level config present, runs/state/types
+  go to `~/.dcompose/workspaces/<hash of cwd>/`, not into the cwd. A repo only gets a `.dcompose/`
+  folder after an explicit `dcompose init` there.
 - **Scripts can shell out, opt-in.** `ctx.sh(cmd, {stdin})` returns `{stdout, stderr, code}`
   and is enabled only with `--allow-exec`. Recorded in the run trace like a tool call. Off by
   default because a read-only run should mean read-only.

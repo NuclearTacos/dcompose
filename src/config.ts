@@ -48,8 +48,13 @@ export type Config = z.infer<typeof Config>;
 
 export const CONFIG_FILE = "dcompose.json";
 export const LOCAL_CONFIG_FILE = "dcompose.local.json";
-export const USER_CONFIG_DIR = join(homedir(), ".dcompose");
-export const USER_CONFIG_FILE = join(USER_CONFIG_DIR, "config.json");
+/** ~/.dcompose, or $DCOMPOSE_HOME. Holds config.json, auth/, daemons/, workspaces/. Read lazily so tests can redirect it. */
+export function dcomposeHome(): string {
+  return process.env.DCOMPOSE_HOME || join(homedir(), ".dcompose");
+}
+export function userConfigFile(): string {
+  return join(dcomposeHome(), "config.json");
+}
 
 export function isStdio(c: ServerConfig): c is StdioServerConfig {
   return "command" in c;
@@ -101,7 +106,7 @@ export function loadConfig(opts: { explicitPath?: string; cwd?: string } = {}): 
 
   const candidates = explicit
     ? [resolve(cwd, explicit)]
-    : [USER_CONFIG_FILE, join(cwd, CONFIG_FILE), join(cwd, LOCAL_CONFIG_FILE)];
+    : [userConfigFile(), join(cwd, CONFIG_FILE), join(cwd, LOCAL_CONFIG_FILE)];
 
   const sources: string[] = [];
   let merged: { mcpServers: Record<string, unknown>; defaults: Record<string, unknown> } = {
@@ -192,15 +197,30 @@ export function writeConfigFile(
   writeFileSync(path, JSON.stringify(config, null, 2) + "\n", "utf8");
 }
 
-/** Nearest ancestor (including cwd) containing dcompose.json or dcompose.local.json; else cwd. */
+/**
+ * Nearest ancestor (including cwd) containing dcompose.json or dcompose.local.json.
+ *
+ * If none exists, dcompose is running on user-level config alone (~/.dcompose/config.json) inside
+ * a directory that never opted in. Writing `.dcompose/` runs, state, or types there would litter
+ * someone else's repo, so fall back to a per-directory workspace under ~/.dcompose/workspaces/.
+ * `dcompose init` creates a project config and switches the directory to project mode.
+ */
 export function findProjectRoot(cwd = process.cwd()): string {
   let dir = resolve(cwd);
   while (true) {
     if (existsSync(join(dir, CONFIG_FILE)) || existsSync(join(dir, LOCAL_CONFIG_FILE))) return dir;
     const parent = dirname(dir);
-    if (parent === dir) return resolve(cwd);
+    if (parent === dir) return homeWorkspace(cwd);
     dir = parent;
   }
+}
+
+/** ~/.dcompose/workspaces/<short hash of cwd>; created on demand. */
+export function homeWorkspace(cwd = process.cwd()): string {
+  const key = createHash("sha1").update(resolve(cwd).toLowerCase().replace(/\\/g, "/")).digest("hex").slice(0, 12);
+  const dir = join(dcomposeHome(), "workspaces", key);
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 /** Parse "30s", "5m", "2h", "500ms", or a bare number of milliseconds. 0 = no limit. */

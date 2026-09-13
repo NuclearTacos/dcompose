@@ -50,7 +50,7 @@ export async function authCommand(registry: Registry, name: string, opts: AuthOp
   }
 
   // Loopback listener for the redirect. Port chosen by the OS; registered dynamically with the AS.
-  const { port, waitForCode, close } = await startCallbackServer();
+  const { port, waitForCode, close } = await startCallbackServer(() => provider.expectedState);
   const redirectUrl = `http://127.0.0.1:${port}/callback`;
 
   let authUrl: URL | null = null;
@@ -110,7 +110,7 @@ export async function authCommand(registry: Registry, name: string, opts: AuthOp
   }
 }
 
-function startCallbackServer(): Promise<{
+function startCallbackServer(expectedState: () => string | undefined): Promise<{
   port: number;
   waitForCode: (timeoutMs: number) => Promise<string>;
   close: () => void;
@@ -125,6 +125,15 @@ function startCallbackServer(): Promise<{
       }
       const code = u.searchParams.get("code");
       const error = u.searchParams.get("error");
+      const state = u.searchParams.get("state");
+      const want = expectedState();
+      if (code && want && state !== want) {
+        res.writeHead(400, { "content-type": "text/plain" }).end("state mismatch");
+        settle?.reject(
+          new Error("authorization callback state did not match; possible CSRF or a stale browser tab. Run again."),
+        );
+        return;
+      }
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       if (code) {
         res.end(

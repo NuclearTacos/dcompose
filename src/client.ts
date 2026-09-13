@@ -159,7 +159,13 @@ export class Server {
     const cause = (e as { cause?: { message?: string } }).cause?.message;
     const msg = cause ? `${e.message} (${cause})` : (e.message ?? String(e));
     const parts = [msg];
-    if (e instanceof NeedsAuthError || e instanceof UnauthorizedError || /401|unauthorized/i.test(msg)) {
+    // The SDK's message when it wants to start an OAuth flow but our non-interactive provider has no
+    // redirect URL is about prepareTokenRequest/authorizationCode; translate it for humans.
+    if (
+      e instanceof NeedsAuthError ||
+      e instanceof UnauthorizedError ||
+      /401|unauthorized|prepareTokenRequest|authorizationCode is required/i.test(msg)
+    ) {
       parts.push(
         `Server requires authentication. Run \`dcompose auth ${this.name}\` to sign in with OAuth, or supply a static token via \`headers\`.`,
       );

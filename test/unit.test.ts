@@ -16,6 +16,8 @@ import { table, firstLine } from "../src/output.ts";
 import type { ToolInfo } from "../src/client.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "dcompose-test-"));
+// Isolate from the developer's real ~/.dcompose/config.json so the merge tests see only their own files.
+process.env.DCOMPOSE_HOME = tmp();
 
 describe("result parsing", () => {
   test("structuredContent wins over text", () => {
@@ -116,8 +118,15 @@ describe("config", () => {
     const deep = join(root, "a", "b");
     mkdirSync(deep, { recursive: true });
     assert.equal(findProjectRoot(deep), root);
+    // No config anywhere up the tree: never use the directory itself (it may be someone else's
+    // repo); use a per-directory workspace under ~/.dcompose instead.
     const lonely = tmp();
-    assert.equal(findProjectRoot(lonely), lonely);
+    const ws = findProjectRoot(lonely);
+    assert.notEqual(ws, lonely);
+    // Lives under DCOMPOSE_HOME (a temp dir here; ~/.dcompose in real use), never under `lonely`.
+    assert.match(ws.replace(/\\/g, "/"), /\/workspaces\/[0-9a-f]{12}$/);
+    assert.ok(ws.replace(/\\/g, "/").startsWith(process.env.DCOMPOSE_HOME!.replace(/\\/g, "/")));
+    assert.equal(findProjectRoot(lonely), ws, "stable for the same directory");
   });
 });
 

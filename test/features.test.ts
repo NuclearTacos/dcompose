@@ -9,6 +9,8 @@ import { paginate, GuardrailError } from "../src/runtime/context.ts";
 import { FileOAuthProvider, NeedsAuthError, tokenPath } from "../src/auth/provider.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
+// Isolate from the developer's real ~/.dcompose (user config, auth tokens, daemon records).
+process.env.DCOMPOSE_HOME = mkdtempSync(join(tmpdir(), "dcompose-home-"));
 const CLI = join(ROOT, "src", "cli.ts");
 const FIXTURE = join(ROOT, "test", "fixtures", "echo-server.ts");
 const tmp = () => mkdtempSync(join(tmpdir(), "dcompose-feat-"));
@@ -45,7 +47,14 @@ describe("paginate", () => {
 describe("oauth provider", () => {
   test("persists client info, tokens and verifier to a per-server file", () => {
     const dir = tmp();
-    const p = new FileOAuthProvider({ server: "my srv", serverUrl: "https://x.example/mcp", dir });
+    // Interactive (has onRedirect): the only mode allowed to persist a client registration.
+    const p = new FileOAuthProvider({
+      server: "my srv",
+      serverUrl: "https://x.example/mcp",
+      dir,
+      redirectUrl: "http://127.0.0.1:1/callback",
+      onRedirect: () => {},
+    });
     assert.equal(p.path, tokenPath("my srv", "https://x.example/mcp", dir));
     assert.match(p.path, /my_srv-[0-9a-f]{8}\.json$/);
     assert.equal(p.hasTokens, false);
