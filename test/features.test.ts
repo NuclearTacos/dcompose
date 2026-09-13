@@ -144,7 +144,7 @@ describe("cli: --trace, NO_COLOR, check on a directory", () => {
     assert.equal(r.status, 1);
     assert.match(r.stderr, /'nope' does not exist/);
     assert.match(r.stderr, /2 scripts checked/);
-    assert.ok(!r.stderr.includes("["), "expected no ANSI colour codes");
+    assert.ok(!r.stderr.includes(String.fromCharCode(27) + "["), "expected no ANSI colour codes");
   });
   test("auth refuses stdio servers and reports missing tokens", () => {
     const stdio = dc(["auth", "echo"]);

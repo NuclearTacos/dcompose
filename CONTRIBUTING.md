@@ -39,4 +39,4 @@ the function. The CLI's exit codes and stdout/stderr split are the contract agen
 
 Small, focused commits with a message that says why. Update `CHANGELOG.md` under
 _Unreleased_ for anything user-visible. If you change the SKILL.md template in
-`src/skill.ts`, regenerate the checked-in copy with `node src/cli.ts init --force`.
+`src/skill.ts`, regenerate the checked-in copies with `node src/cli.ts init --force`.
