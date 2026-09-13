@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- DESIGN.md roadmap phases 8 to 13: script isolation, npm publishing, import from more
+  clients, call shorthand, record and replay, keystore credential storage.
 - `dcompose auth <server>`: OAuth 2.1 sign-in for remote servers (PKCE and dynamic client
   registration via the MCP SDK, loopback callback on 127.0.0.1, tokens under `~/.dcompose/auth/`).
   Normal connections pick stored tokens up and refresh them; a 401 now names the command to run.

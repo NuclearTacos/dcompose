@@ -243,6 +243,49 @@ Exit codes: 0 script returned; 1 script threw; 2 guardrail hit (timeout / max-ca
    localhost; remote exposure is a deliberate step that requires its own auth. Solves the
    localhost-only server problem (DataGrip) by gatewaying from the machine that can reach it.
 
+8. **Script isolation.** Today a script runs in the dcompose process as the user, with Node's
+   full standard library and, in memory, every server's credentials. Guardrails bound MCP calls
+   and nothing else. Add an opt-in `--isolate` that runs the script in a child process with
+   Node's permission model (`--permission`, no filesystem or network by default, read access to
+   the script directory and `.dcompose/types/`) and hands it `ctx.mcp` over an RPC channel to
+   the parent. The parent keeps the MCP clients, the server `env` blocks, and the OAuth tokens;
+   the child never sees them. `ctx.sh()` is refused under `--isolate` regardless of
+   `--allow-exec`. Config `defaults.isolate: true` makes it the project default, and the pack
+   manifest can require it per script. Update SECURITY.md when this lands so "bound, not
+   sandboxed" describes only the default mode.
+9. **Publish.** `npm install -g dcompose` and `npx dcompose` from the npm registry, replacing
+   clone-and-link. Prerequisites: reserve the name or pick a scope, `prepublishOnly` running
+   `npm run ci`, the SKILL.md and `patterns.md`/`pitfalls.md` shipped in the package, and the
+   `dcompose` path alias in the generated tsconfig resolving to the installed package rather
+   than a source checkout. Tag releases from CHANGELOG headings; `dcompose --version` reports
+   the package version and a `dcompose upgrade` hint appears once a day when a newer version is
+   published.
+10. **Import from more clients.** `import` reads Claude Code only. Add `--from <client>` for
+    Claude Desktop (`claude_desktop_config.json`), Cursor (`.cursor/mcp.json`, user and project),
+    VS Code (`.vscode/mcp.json`, whose `servers` key and `inputs` prompts differ from
+    `mcpServers`), Codex (`~/.codex/config.toml`, TOML), and Gemini CLI (`~/.gemini/settings.json`).
+    Each becomes a small adapter that returns the common `mcpServers` shape; secrets are handled
+    as today (env blocks copied into the local file, `${ENV}` references preserved). The
+    existing `init --import-claude` stays as the shorthand for the Claude Code path.
+11. **Call shorthand.** `call` takes a JSON object. Add `key=value` (string), `key:=value`
+    (JSON), and `key=@file` arguments so one-off calls need no quoting gymnastics in a shell:
+    `dcompose call pagerduty.list_incidents statuses:='["triggered"]' limit:=5`. JSON remains
+    the canonical form and the two cannot be mixed in one invocation. Also `-o md` to render
+    array-of-object results as a Markdown table for direct pasting into a reply.
+12. **Record and replay.** Traces record call metadata, not payloads. Add `run --record` to
+    store full arguments and results alongside the trace, and `run --replay <run-id>` to serve
+    those results back to the script instead of calling servers. The agent can then iterate on
+    the filtering and shaping half of a script offline, against the same data, without
+    re-paying the API calls or the cold start. Recordings hold real data and live under
+    `.dcompose/runs/`, which is already gitignored. `runs show` marks recorded runs, and a
+    `runs prune --recorded` command deletes them.
+13. **Credential storage.** OAuth tokens live in `~/.dcompose/auth/` as mode-0600 files, which
+    Windows does not honour. Store them in the OS keystore where one exists (Windows Credential
+    Manager, macOS Keychain, Secret Service on Linux) with the file as fallback, and add
+    `${SECRET:name}` references in server config that resolve from the same keystore, so
+    `dcompose.json` can be committed with neither literal tokens nor a dependency on the
+    shell environment. `auth --status` reports which backend holds each token.
+
 ## Open questions
 
 - ~~Should scripts be able to `import` npm packages from the project?~~ Resolved: they already

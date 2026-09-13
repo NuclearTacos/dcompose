@@ -200,7 +200,7 @@ OAuth tokens, daemon sockets, workspaces); the test suite uses it for isolation.
 ## Project
 
 - [DESIGN.md](DESIGN.md): the reasoning, the CLI-versus-MCP-server decision, the auth regimes,
-  and the roadmap (packs, then MCP-server mode).
+  and the roadmap (packs, MCP-server mode, script isolation, npm publishing).
 - [EXAMPLES.md](EXAMPLES.md): target usage from the agent's point of view.
 - [examples/](examples/): real scripts that ran against PagerDuty during development.
 - [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md).
