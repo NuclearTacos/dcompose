@@ -19,31 +19,44 @@ sequenceDiagram
     participant H as Host (Claude Code)
     participant S as MCP server
 
-    rect rgb(255, 245, 238)
     Note over A,S: Native tool calls: N+1 round-trips, every record enters context, every call permission-checked
     A->>H: list_employees
+    Note over H: permission check
     H->>S: call
     S-->>H: 300 records
     H-->>A: 300 records (into context)
     loop for each active employee
         A->>H: get_employee(id)
+        Note over H: permission check
         H->>S: call
         S-->>H: full record
         H-->>A: full record (into context)
     end
-    end
+```
 
-    rect rgb(240, 248, 255)
+With dcompose, the host runs one shell command. The dcompose process opens its own MCP
+connections, and the records never leave it:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Agent (model)
+    participant H as Host (Claude Code)
+    participant D as dcompose (process)
+    participant S as MCP server
+
     Note over A,S: dcompose: 1 round-trip, 1 permission check, only the answer enters context
     A->>H: Bash: dcompose run active-names --read-only
-    H->>S: list_employees
-    S-->>H: 300 records (stay in the process)
+    Note over H: one permission check
+    H->>D: spawn
+    D->>S: list_employees
+    S-->>D: 300 records (stay in the process)
     loop pmap, concurrency 8
-        H->>S: get_employee(id)
-        S-->>H: full record (stays in the process)
+        D->>S: get_employee(id)
+        S-->>D: full record (stays in the process)
     end
-    H-->>A: ["Ada", "Alan", ...] (a few hundred bytes)
-    end
+    D-->>H: ["Ada", "Alan", ...] (stdout)
+    H-->>A: a few hundred bytes (into context)
 ```
 
 The permission point matters in practice. Claude Code checks each tool call against its
