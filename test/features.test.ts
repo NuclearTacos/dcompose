@@ -11,6 +11,8 @@ import { FileOAuthProvider, NeedsAuthError, tokenPath } from "../src/auth/provid
 const ROOT = resolve(import.meta.dirname, "..");
 // Isolate from the developer's real ~/.dcompose (user config, auth tokens, daemon records).
 process.env.DCOMPOSE_HOME = mkdtempSync(join(tmpdir(), "dcompose-home-"));
+// ...and from their Claude Code plugins, whose servers dcompose would otherwise add.
+process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), "dcompose-claude-"));
 const CLI = join(ROOT, "src", "cli.ts");
 const FIXTURE = join(ROOT, "test", "fixtures", "echo-server.ts");
 const tmp = () => mkdtempSync(join(tmpdir(), "dcompose-feat-"));

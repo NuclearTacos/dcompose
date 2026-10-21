@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Claude Code plugin servers are added automatically, under every config file: dcompose reads
+  the installed and enabled plugins on each run and launches their MCP servers as Claude Code
+  does, resolving `${CLAUDE_PLUGIN_ROOT}` to the current install. `import` couldn't copy these
+  (their root is a versioned folder that moves on every update). A config entry of the same name
+  wins; `"claudePlugins": false` turns it off; `dcompose where` shows each server's plugin.
 - `--isolate` on `run` and `eval`, and `defaults.isolate` in config: run the script in a child
   process under Node's permission model. The child cannot write files, spawn processes, or see the
   parent's environment or server credentials; `mcp.*`, `call`, and `store` are proxied to the

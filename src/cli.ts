@@ -59,7 +59,7 @@ async function registry(): Promise<Registry> {
       daemonClient = await ensureDaemon(root, (s) => process.stderr.write(s + "\n"));
     if (daemonClient) {
       // Config edited since the daemon started? Ask it to reload so we never run against stale servers.
-      const want = configHash({ config, sources: [] });
+      const want = configHash({ config });
       const have = (await daemonClient.status().catch(() => null))?.configHash;
       if (have && have !== want) {
         await daemonClient.request("reload").catch(() => {});
