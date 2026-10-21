@@ -36,13 +36,15 @@ Companion files in this folder, read them when relevant:
 
 ## Config, in one breath
 
-Servers come from three files merged in order: \`~/.dcompose/config.json\` (user), then
-\`./dcompose.json\`, then \`./dcompose.local.json\`. Entries use Claude Code's \`mcpServers\` shape;
-\`\${VAR}\` and \`\${VAR:-default}\` expand from the environment. \`dcompose where\` shows which files
-are in effect.
+Servers come from Claude Code's enabled plugins (automatically, launched as Claude Code launches
+them), then three files merged in order: \`~/.dcompose/config.json\` (user), then
+\`./dcompose.json\`, then \`./dcompose.local.json\`; a file's entry wins over a plugin's of the same
+name. Entries use Claude Code's \`mcpServers\` shape; \`\${VAR}\` and \`\${VAR:-default}\` expand from
+the environment. \`dcompose where\` shows which files and plugins are in effect.
 
-**Need a server Claude Code has but dcompose does not?** Copy it into the user-level config;
-nothing is written to the current directory:
+**Need a server Claude Code has but dcompose does not?** A plugin's server is already there. For
+one in \`~/.claude.json\` or \`./.mcp.json\`, copy it into the user-level config; nothing is written
+to the current directory:
 \`\`\`sh
 dcompose import --list            # what Claude Code has
 dcompose import pagerduty         # → ~/.dcompose/config.json

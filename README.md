@@ -168,9 +168,19 @@ daemon start|stop|status|log     warm-connection daemon
 
 ## Configuration
 
-Resolution order, later wins per server name: `~/.dcompose/config.json`, then `./dcompose.json`
-(commit this, use `${ENV_VAR}` for secrets), then `./dcompose.local.json` (gitignored; where
-`--import-claude` writes). Entries use Claude Code's `mcpServers` shape.
+Resolution order, later wins per server name: Claude Code's enabled plugins, then
+`~/.dcompose/config.json`, then `./dcompose.json` (commit this, use `${ENV_VAR}` for secrets), then
+`./dcompose.local.json` (gitignored; where `--import-claude` writes). Entries use Claude Code's
+`mcpServers` shape.
+
+**Plugin servers need no setup.** On every run dcompose reads Claude Code's installed and enabled
+plugins (`installed_plugins.json` and `enabledPlugins` in user, project and local settings) and
+adds each one's MCP servers, from its `.mcp.json` or `plugin.json`, with `${CLAUDE_PLUGIN_ROOT}`
+and `${CLAUDE_PLUGIN_DATA}` filled in for its current install. So a plugin's server works the
+same way Claude Code launches it on any machine that has the plugin, and it follows plugin updates
+without being imported again. A config file's entry of the same name wins. `"claudePlugins": false`
+in any config file turns this off; `--config` replaces the whole chain, plugins included.
+`CLAUDE_CONFIG_DIR` is honoured, and `dcompose where` lists which servers came from which plugin.
 
 A directory with no project config still works on the user-level file alone, and its runs,
 state, and generated types go to a per-directory workspace under `~/.dcompose/workspaces/`

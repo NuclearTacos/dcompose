@@ -18,6 +18,8 @@ import type { ToolInfo } from "../src/client.ts";
 const tmp = () => mkdtempSync(join(tmpdir(), "dcompose-test-"));
 // Isolate from the developer's real ~/.dcompose/config.json so the merge tests see only their own files.
 process.env.DCOMPOSE_HOME = tmp();
+// ...and from their Claude Code plugins, whose servers dcompose would otherwise add.
+process.env.CLAUDE_CONFIG_DIR = tmp();
 
 describe("result parsing", () => {
   test("structuredContent wins over text", () => {
@@ -146,6 +148,149 @@ describe("config", () => {
     } finally {
       process.env.DCOMPOSE_HOME = prev;
     }
+  });
+});
+
+describe("claude code plugins", () => {
+  /** A fake CLAUDE_CONFIG_DIR: `installed` maps `name@mkt` to its plugin files, `enabled` is settings.json's enabledPlugins. */
+  const claudeDir = (
+    installed: Record<string, { files: Record<string, unknown>; scope?: string; projectPath?: string }>,
+    enabled: Record<string, boolean>,
+  ) => {
+    const dir = tmp();
+    const plugins: Record<string, unknown[]> = {};
+    for (const [key, p] of Object.entries(installed)) {
+      const root = join(dir, "plugins", "cache", ...key.split("@").reverse(), "1.0.0");
+      for (const [rel, body] of Object.entries(p.files)) {
+        mkdirSync(join(root, rel, ".."), { recursive: true });
+        writeFileSync(join(root, rel), typeof body === "string" ? body : JSON.stringify(body));
+      }
+      plugins[key] = [{ scope: p.scope ?? "user", installPath: root, version: "1.0.0", projectPath: p.projectPath }];
+    }
+    mkdirSync(join(dir, "plugins"), { recursive: true });
+    writeFileSync(join(dir, "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins }));
+    writeFileSync(join(dir, "settings.json"), JSON.stringify({ enabledPlugins: enabled }));
+    return dir;
+  };
+  const withClaudeDir = <T>(dir: string, fn: () => T): T => {
+    const prev = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = dir;
+    try {
+      return fn();
+    } finally {
+      process.env.CLAUDE_CONFIG_DIR = prev;
+    }
+  };
+  const doppler = {
+    "rock-sql": {
+      command: "doppler",
+      args: ["run", "--", "node", "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs", "--data", "${CLAUDE_PLUGIN_DATA}"],
+    },
+  };
+
+  test("an enabled plugin's servers are added, launched from its current install", () => {
+    const dir = claudeDir(
+      {
+        "rock-sql-mcp@lc": { files: { ".mcp.json": { mcpServers: doppler } } },
+        "off@lc": { files: { ".mcp.json": { mcpServers: { off: { command: "x" } } } } },
+        "unlisted@lc": { files: { ".mcp.json": { mcpServers: { unlisted: { command: "x" } } } } },
+      },
+      { "rock-sql-mcp@lc": true, "off@lc": false },
+    );
+    const { config, plugins, sources } = withClaudeDir(dir, () => loadConfig({ cwd: tmp() }));
+    assert.deepEqual(Object.keys(config.mcpServers), ["rock-sql"]);
+    assert.deepEqual(plugins, { "rock-sql": "rock-sql-mcp@lc" });
+    assert.deepEqual(sources, []);
+    const args = (config.mcpServers["rock-sql"] as { args: string[] }).args;
+    const root = join(dir, "plugins", "cache", "lc", "rock-sql-mcp", "1.0.0");
+    assert.equal(args[3], `${root}/dist/server.mjs`);
+    assert.equal(args[5], join(dir, "plugins", "data", "rock-sql-mcp-lc"));
+  });
+
+  test("a config file's entry of the same name wins; claudePlugins: false and --config leave plugins out", () => {
+    const dir = claudeDir(
+      { "rock-sql-mcp@lc": { files: { ".mcp.json": { mcpServers: doppler } } } },
+      { "rock-sql-mcp@lc": true },
+    );
+    const project = tmp();
+    writeFileSync(join(project, "dcompose.json"), JSON.stringify({ mcpServers: { "rock-sql": { command: "mine" } } }));
+    withClaudeDir(dir, () => {
+      const { config, plugins } = loadConfig({ cwd: project });
+      assert.equal((config.mcpServers["rock-sql"] as { command: string }).command, "mine");
+      assert.deepEqual(plugins, {});
+
+      const off = tmp();
+      writeFileSync(join(off, "dcompose.json"), JSON.stringify({ claudePlugins: false }));
+      assert.deepEqual(Object.keys(loadConfig({ cwd: off }).config.mcpServers), []);
+
+      const explicit = join(tmp(), "c.json");
+      writeFileSync(explicit, "{}");
+      assert.deepEqual(Object.keys(loadConfig({ explicitPath: explicit }).config.mcpServers), []);
+    });
+  });
+
+  test("plugin.json mcpServers (inline or a path) and a bare .mcp.json map are read too", () => {
+    const dir = claudeDir(
+      {
+        "a@m": {
+          files: {
+            ".mcp.json": { bare: { command: "b" } },
+            ".claude-plugin/plugin.json": {
+              name: "a",
+              mcpServers: ["./more.json", { inline: { type: "http", url: "https://x.test/mcp" } }],
+            },
+            "more.json": { mcpServers: { more: { command: "m" } } },
+          },
+        },
+      },
+      { "a@m": true },
+    );
+    const { config } = withClaudeDir(dir, () => loadConfig({ cwd: tmp() }));
+    assert.deepEqual(Object.keys(config.mcpServers).sort(), ["bare", "inline", "more"]);
+  });
+
+  test("project settings override the user's, and a project-scope install is used inside that project", () => {
+    const project = tmp();
+    const dir = claudeDir(
+      {
+        "p@m": {
+          files: { ".mcp.json": { mcpServers: { p: { command: "p" } } } },
+          scope: "project",
+          projectPath: project,
+        },
+      },
+      { "p@m": false },
+    );
+    withClaudeDir(dir, () => {
+      assert.deepEqual(Object.keys(loadConfig({ cwd: project }).config.mcpServers), []);
+      mkdirSync(join(project, ".claude"));
+      writeFileSync(
+        join(project, ".claude", "settings.local.json"),
+        JSON.stringify({ enabledPlugins: { "p@m": true } }),
+      );
+      const sub = join(project, "sub");
+      mkdirSync(sub);
+      assert.deepEqual(Object.keys(loadConfig({ cwd: sub }).config.mcpServers), ["p"]);
+      // Outside the project, a project-scope install doesn't apply.
+      assert.deepEqual(Object.keys(loadConfig({ cwd: tmp() }).config.mcpServers), []);
+    });
+  });
+
+  test("a name two plugins share goes to the first, a broken file is skipped, and nothing throws", () => {
+    const dir = claudeDir(
+      {
+        "b@m": { files: { ".mcp.json": { mcpServers: { same: { command: "from-b" } } } } },
+        "a@m": { files: { ".mcp.json": { mcpServers: { same: { command: "from-a" }, bad: { type: "http" } } } } },
+        "c@m": { files: { ".mcp.json": "{ not json" } },
+      },
+      { "a@m": true, "b@m": true, "c@m": true },
+    );
+    const { config, pluginSkipped } = withClaudeDir(dir, () => loadConfig({ cwd: tmp() }));
+    assert.equal((config.mcpServers.same as { command: string }).command, "from-a");
+    assert.deepEqual(
+      pluginSkipped.map((s) => `${s.name} ${s.plugin}`),
+      ["bad a@m", "same b@m"],
+    );
   });
 });
 

@@ -20,13 +20,15 @@ export async function whereCommand(opts: { json?: boolean }): Promise<number> {
   const cwd = process.cwd();
   const root = findProjectRoot(cwd);
   const projectMode = existsSync(join(root, CONFIG_FILE)) || existsSync(join(root, LOCAL_CONFIG_FILE));
-  const { sources } = loadConfig();
+  const { sources, plugins, pluginSkipped } = loadConfig();
   const dc = join(root, ".dcompose");
   const info = {
     cwd,
     mode: projectMode ? "project" : "workspace",
     root,
     configSources: sources,
+    pluginServers: plugins,
+    pluginSkipped,
     userConfig: userConfigFile(),
     scripts: join(dc, "scripts"),
     runs: join(dc, "runs"),
@@ -45,6 +47,14 @@ export async function whereCommand(opts: { json?: boolean }): Promise<number> {
     `mode      ${info.mode}${projectMode ? "" : "  (no dcompose.json here; using a per-directory workspace so this directory is never written to)"}`,
     `root      ${info.root}`,
     `config    ${sources.length ? sources.join("\n          ") : "(none found)"}`,
+    `plugins   ${
+      Object.keys(plugins).length
+        ? Object.entries(plugins)
+            .map(([name, plugin]) => `${name}  (from Claude Code plugin ${plugin})`)
+            .join("\n          ")
+        : "(none)"
+    }`,
+    ...pluginSkipped.map((s) => `          skipped ${s.name} from ${s.plugin}: ${s.reason}`),
     `scripts   ${info.scripts}`,
     `runs      ${info.runs}`,
     `state     ${info.state}`,

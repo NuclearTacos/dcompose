@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { z } from "zod";
 import { createHash } from "node:crypto";
+import { discoverPluginServers, type PluginServers } from "./claude-plugins.ts";
 
 // Same shape as Claude Code's `mcpServers` entries so users can copy them verbatim.
 const StdioServer = z.object({
@@ -27,6 +28,8 @@ export type HttpServerConfig = z.infer<typeof HttpServer>;
 
 export const Config = z.object({
   mcpServers: z.record(z.string(), ServerConfig).default({}),
+  /* Add the MCP servers of Claude Code's enabled plugins, under every config file. */
+  claudePlugins: z.boolean().default(true),
   daemon: z
     .object({
       /* Start a daemon automatically the first time a command needs a server. */
@@ -95,12 +98,17 @@ export interface LoadedConfig {
   config: Config;
   /** Files that contributed, in merge order (later wins). */
   sources: string[];
+  /** Servers taken from Claude Code plugins (name → `plugin@marketplace`); a config file's entry of the same name wins. */
+  plugins: Record<string, string>;
+  /** Plugin servers that couldn't be used, and why. */
+  pluginSkipped: PluginServers["skipped"];
 }
 
 /**
  * Resolution order (later overrides earlier, per server name):
- *   ~/.dcompose/config.json  →  ./dcompose.json  →  ./dcompose.local.json
- * An explicit path (--config or DCOMPOSE_CONFIG) replaces the whole chain.
+ *   Claude Code's enabled plugins  →  ~/.dcompose/config.json  →  ./dcompose.json  →  ./dcompose.local.json
+ * An explicit path (--config or DCOMPOSE_CONFIG) replaces the whole chain, plugins included.
+ * `"claudePlugins": false` in any file of the chain leaves the plugins out.
  */
 export function loadConfig(opts: { explicitPath?: string; cwd?: string } = {}): LoadedConfig {
   const cwd = opts.cwd ?? process.cwd();
@@ -111,7 +119,7 @@ export function loadConfig(opts: { explicitPath?: string; cwd?: string } = {}): 
     : [userConfigFile(), join(cwd, CONFIG_FILE), join(cwd, LOCAL_CONFIG_FILE)];
 
   const sources: string[] = [];
-  let merged: { mcpServers: Record<string, unknown>; defaults: Record<string, unknown> } = {
+  let merged: { mcpServers: Record<string, unknown>; defaults: Record<string, unknown>; claudePlugins?: unknown } = {
     mcpServers: {},
     defaults: {},
   };
@@ -126,8 +134,21 @@ export function loadConfig(opts: { explicitPath?: string; cwd?: string } = {}): 
     merged = {
       mcpServers: { ...merged.mcpServers, ...(raw.mcpServers ?? {}) },
       defaults: { ...merged.defaults, ...(raw.defaults ?? {}) },
+      claudePlugins: raw.claudePlugins ?? merged.claudePlugins,
     };
     sources.push(path);
+  }
+
+  const plugins: Record<string, string> = {};
+  let pluginSkipped: PluginServers["skipped"] = [];
+  if (!explicit && merged.claudePlugins !== false) {
+    const found = discoverPluginServers(cwd);
+    pluginSkipped = found.skipped;
+    for (const [name, sc] of Object.entries(found.servers)) {
+      if (name in merged.mcpServers) continue;
+      merged.mcpServers[name] = sc;
+      plugins[name] = found.origin[name]!;
+    }
   }
 
   const parsed = Config.safeParse(expandEnv(merged));
@@ -135,7 +156,7 @@ export function loadConfig(opts: { explicitPath?: string; cwd?: string } = {}): 
     const issues = parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new ConfigError(`Invalid config (${sources.join(", ") || "no files"}):\n${issues}`);
   }
-  return { config: parsed.data, sources };
+  return { config: parsed.data, sources, plugins, pluginSkipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +204,7 @@ export function importFromClaude(cwd = process.cwd()): ImportResult {
   return { imported, skipped };
 }
 
-function normaliseClaudeEntry(raw: unknown): unknown {
+export function normaliseClaudeEntry(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const e = { ...(raw as Record<string, unknown>) };
   // Claude Code writes "type": "stdio" | "http" | "sse"; older entries omit type for stdio.
@@ -265,6 +286,6 @@ export function parseDuration(s: string | number): number {
 }
 
 /** Stable hash of the effective config, so a daemon can tell when its config is stale. */
-export function configHash(loaded: LoadedConfig): string {
+export function configHash(loaded: Pick<LoadedConfig, "config">): string {
   return createHash("sha1").update(JSON.stringify(loaded.config)).digest("hex").slice(0, 12);
 }
